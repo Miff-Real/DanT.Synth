@@ -9,8 +9,8 @@
     "donateUrl": "https://ko-fi.com/dantsynth",
     "modules": [
         {
-            "slug": "danttemplate",
-            "name": "Module Template",
+            "slug": "tmplt",
+            "name": "Tmplt",
             "description": "Template for a DanT module"
         }
     ]

@@ -10,8 +10,8 @@
     "modules": [
         {
             "slug": "danttemplate",
-            "name": "danttemplate",
-            "description": "template for a dant module"
+            "name": "Module Template",
+            "description": "Template for a DanT module"
         }
     ]
 }

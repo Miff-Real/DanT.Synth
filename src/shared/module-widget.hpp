@@ -12,7 +12,11 @@ struct ModuleWidget : rack::app::ModuleWidget {
   void draw(const rack::widget::Widget::DrawArgs &args) override {
     DANT::drawPanel(args, this);
 
-    rack::widget::Widget::draw(args);
+    rack::app::ModuleWidget::draw(args);
+  }
+
+  void drawLayer(const rack::widget::Widget::DrawArgs &args, int layer) override {
+    rack::app::ModuleWidget::drawLayer(args, layer);
   }
 };
 }  // namespace DANT

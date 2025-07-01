@@ -1,10 +1,11 @@
 #pragma once
 
+#include "../plugin.hpp"
 #include "colours.hpp"
 
 namespace DANT {
 static const float PORT_CIRCLE_STROKE{1.5f};
-static const float PORT_CIRCLE_SIZE{13.0f};
+static const float PORT_CIRCLE_SIZE{12.5f};
 
 struct Port : rack::app::SvgPort {
   bool isOutput{false};

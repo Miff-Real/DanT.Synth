@@ -43,8 +43,8 @@ void drawPanel(const rack::widget::Widget::DrawArgs &args, W *widget) {
   opts.align = NVG_ALIGN_LEFT | NVG_ALIGN_TOP;
   float logoWidth = DANT::Fonts::drawText(args, "DanT", opts);
   opts.ttfFile = DANT::REGULAR_TTF;
-  opts.xpos += logoWidth;
-  DANT::Fonts::drawText(args, ("." + widget->moduleName()).c_str(), opts);
+  opts.xpos += logoWidth + 1.0f;
+  DANT::Fonts::drawText(args, widget->moduleName().c_str(), opts);
 
   nvgRestore(args.vg);
 }

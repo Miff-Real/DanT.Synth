@@ -11,6 +11,13 @@ static const NVGcolor RGB_PANEL_BORDER_DARK{nvgRGB(0, 115, 157)};
 static const NVGcolor RGB_PANEL_TEXT{nvgRGB(0, 42, 57)};
 static const NVGcolor RGB_PANEL_TEXT_DARK{nvgRGB(211, 243, 255)};
 
+static const NVGcolor RGB_CV_GREEN{nvgRGB(154, 213, 66)};
+static const NVGcolor RGB_CV_GREEN_DARK{nvgRGB(0, 165, 81)};
+static const NVGcolor RGB_CV_RED{nvgRGB(209, 26, 72)};
+static const NVGcolor RGB_CV_YELLOW{nvgRGB(255, 201, 0)};
+
+static const NVGcolor RGB_UNLIT{nvgRGB(63, 63, 63)};
+
 struct Colours {
   static NVGcolor getPanelColour() { return rack::settings::preferDarkPanels ? RGB_PANEL_DARK : RGB_PANEL; }
 
@@ -19,6 +26,8 @@ struct Colours {
   }
 
   static NVGcolor getTextColour() { return rack::settings::preferDarkPanels ? RGB_PANEL_TEXT_DARK : RGB_PANEL_TEXT; }
+
+  static NVGcolor getCvGreenColour() { return rack::settings::preferDarkPanels ? RGB_CV_GREEN_DARK : RGB_CV_GREEN; }
 };
 
 }  // namespace DANT

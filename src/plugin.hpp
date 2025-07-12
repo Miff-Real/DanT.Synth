@@ -2,6 +2,7 @@
 
 #include <cmath>  // std::acos
 #include <rack.hpp>
+#include <string>
 
 extern rack::plugin::Plugin *pluginInstance;
 
@@ -41,5 +42,60 @@ static const float DEFAULT_B_B{238.0f};
 static const float DEFAULT_R_D{48.0f};
 static const float DEFAULT_G_D{48.0f};
 static const float DEFAULT_B_D{48.0f};
+
+// Plugin shared settings
+static const std::string PLUGIN_SETTINGS_FILENAME{"DanTSynth.json"};
+
+static void saveSettings(json_t *rootJ) {
+  std::string settingsFilename = rack::asset::user(DANT::PLUGIN_SETTINGS_FILENAME);
+  FILE *file = fopen(settingsFilename.c_str(), "w");
+  if (file) {
+    json_dumpf(rootJ, file, JSON_INDENT(2) | JSON_REAL_PRECISION(9));
+    fclose(file);
+  }
+}
+
+static json_t *readSettings() {
+  std::string settingsFilename = rack::asset::user(DANT::PLUGIN_SETTINGS_FILENAME);
+  FILE *file = fopen(settingsFilename.c_str(), "r");
+  if (!file) {
+    return json_object();
+  }
+  json_error_t error;
+  json_t *rootJ = json_loadf(file, 0, &error);
+  fclose(file);
+  return rootJ;
+}
+
+static void saveUserSettings() {
+  json_t *rootJ = json_object();
+
+  json_object_set_new(rootJ, "panelBrightRed", json_integer(static_cast<int>(DANT::PANEL_R_B)));
+  json_object_set_new(rootJ, "panelBrightGreen", json_integer(static_cast<int>(DANT::PANEL_G_B)));
+  json_object_set_new(rootJ, "panelBrightBlue", json_integer(static_cast<int>(DANT::PANEL_B_B)));
+  json_object_set_new(rootJ, "panelDarkRed", json_integer(static_cast<int>(DANT::PANEL_R_D)));
+  json_object_set_new(rootJ, "panelDarkGreen", json_integer(static_cast<int>(DANT::PANEL_G_D)));
+  json_object_set_new(rootJ, "panelDarkBlue", json_integer(static_cast<int>(DANT::PANEL_B_D)));
+
+  DANT::saveSettings(rootJ);
+}
+
+static void loadUserSettings() {
+  json_t *settingsJ{DANT::readSettings()};
+
+  json_t *pbrJ = json_object_get(settingsJ, "panelBrightRed");
+  json_t *pbgJ = json_object_get(settingsJ, "panelBrightGreen");
+  json_t *pbbJ = json_object_get(settingsJ, "panelBrightBlue");
+  json_t *pdrJ = json_object_get(settingsJ, "panelDarkRed");
+  json_t *pdgJ = json_object_get(settingsJ, "panelDarkGreen");
+  json_t *pdbJ = json_object_get(settingsJ, "panelDarkBlue");
+
+  DANT::PANEL_R_B = pbrJ ? static_cast<float>(json_integer_value(pbrJ)) : DANT::DEFAULT_R_B;
+  DANT::PANEL_G_B = pbgJ ? static_cast<float>(json_integer_value(pbgJ)) : DANT::DEFAULT_G_B;
+  DANT::PANEL_B_B = pbbJ ? static_cast<float>(json_integer_value(pbbJ)) : DANT::DEFAULT_B_B;
+  DANT::PANEL_R_D = pdrJ ? static_cast<float>(json_integer_value(pdrJ)) : DANT::DEFAULT_R_D;
+  DANT::PANEL_G_D = pdgJ ? static_cast<float>(json_integer_value(pdgJ)) : DANT::DEFAULT_G_D;
+  DANT::PANEL_B_D = pdbJ ? static_cast<float>(json_integer_value(pdbJ)) : DANT::DEFAULT_B_D;
+}
 
 }  // namespace DANT

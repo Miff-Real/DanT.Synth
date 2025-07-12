@@ -73,6 +73,8 @@ struct AtocrModule : rack::engine::Module {
    * Called on autosave, store non-parameter module data.
    */
   json_t *dataToJson() override {
+    DANT::saveUserSettings();
+
     json_t *rootJ = json_object();
 
     return rootJ;
@@ -81,7 +83,7 @@ struct AtocrModule : rack::engine::Module {
   /**
    * Called when module is loaded, sets non-parameter module data.
    */
-  void dataFromJson(json_t *rootJ) override {}
+  void dataFromJson(json_t *rootJ) override { DANT::loadUserSettings(); }
 
   /**
    * Called when a preset is loaded.

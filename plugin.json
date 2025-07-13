@@ -9,9 +9,9 @@
     "donateUrl": "https://ko-fi.com/dantsynth",
     "modules": [
         {
-            "slug": "atocr",
-            "name": "atocr",
-            "description": "[5HP][Polyphonic] Attenuverted attenuverter with offset, clipping and rectifier. Offset can pre or post attenuversion."
+            "slug": "AOCR",
+            "name": "AOCR",
+            "description": "[5HP][Polyphonic] Attenuverter & Offset & Clip & Rectify. Reorderable."
         }
     ]
 }

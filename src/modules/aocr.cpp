@@ -1,7 +1,7 @@
 #include <algorithm>  // std::copy std::fill
 #include <string>
 
-#include "../dsp/levels.hpp"
+#include "../dsp/att-off-clip-rect.hpp"
 #include "../plugin.hpp"
 #include "../shared/grid-light.hpp"
 #include "../shared/knob.hpp"
@@ -17,7 +17,7 @@ const int HP{5};
 /**
  * Module: audio thread.
  */
-struct AtocrModule : rack::engine::Module {
+struct AocrModule : rack::engine::Module {
   enum ParamIds {      // presets use param index
     ATV_PARAM,         // param 0
     ATV_CV_ATV_PARAM,  // param 1
@@ -39,7 +39,7 @@ struct AtocrModule : rack::engine::Module {
   /**
    * Module constructor.
    */
-  AtocrModule() {
+  AocrModule() {
     rack::engine::Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
     rack::engine::Module::configParam(ATV_PARAM, -2.0f, 2.0f, 1.0f, "Signal Attenuverter");
@@ -67,7 +67,7 @@ struct AtocrModule : rack::engine::Module {
   /**
    * Module destructor.
    */
-  ~AtocrModule() {}
+  ~AocrModule() {}
 
   /**
    * Called on autosave, store non-parameter module data.
@@ -217,7 +217,7 @@ struct AtocrModule : rack::engine::Module {
 /**
  * Widget: UI thread.
  */
-struct AtocrWidget : DANT::ModuleWidget {
+struct AocrWidget : DANT::ModuleWidget {
   /**
    * Component widgets.
    */
@@ -238,13 +238,13 @@ struct AtocrWidget : DANT::ModuleWidget {
   /**
    * Widget constructor.
    */
-  AtocrWidget(AtocrModule *module) {
+  AocrWidget(AocrModule *module) {
     rack::app::ModuleWidget::setModule(module);
 
     this->box.size = rack::math::Vec(rack::app::RACK_GRID_WIDTH * HP, rack::app::RACK_GRID_HEIGHT);
 
     // construct components
-    testInputPort = rack::createInputCentered<DANT::Port>(DANT::layout(3.0f, 2.0f), module, AtocrModule::SGNL_INPUT);
+    testInputPort = rack::createInputCentered<DANT::Port>(DANT::layout(3.0f, 2.0f), module, AocrModule::SGNL_INPUT);
 
     signalInGridLight = rack::createWidgetCentered<DANT::GridLight>(DANT::layout(4.5f, 2.0f));
     signalInGridLight->fullMode();
@@ -253,36 +253,36 @@ struct AtocrWidget : DANT::ModuleWidget {
       signalInGridLight->channelValues = module->inputSignalGridLights;  // array decays into pointer to 1st element
     }
 
-    attenuverterKnob = rack::createParamCentered<DANT::Knob>(DANT::layout(2.0f, 5.0f), module, AtocrModule::ATV_PARAM);
+    attenuverterKnob = rack::createParamCentered<DANT::Knob>(DANT::layout(2.0f, 5.0f), module, AocrModule::ATV_PARAM);
     attenuverterKnob->vizType = DANT::BIPARC;
-    attenuverterKnob->inputId = AtocrModule::ATV_CV_INPUT;
-    attenuverterKnob->cvAttId = AtocrModule::ATV_CV_ATV_PARAM;
+    attenuverterKnob->inputId = AocrModule::ATV_CV_INPUT;
+    attenuverterKnob->cvAttId = AocrModule::ATV_CV_ATV_PARAM;
 
     attenuverterCvTrimpot =
-        rack::createParamCentered<DANT::Trimpot>(DANT::layout(4.0f, 4.0f), module, AtocrModule::ATV_CV_ATV_PARAM);
+        rack::createParamCentered<DANT::Trimpot>(DANT::layout(4.0f, 4.0f), module, AocrModule::ATV_CV_ATV_PARAM);
 
     attenuverterCvInput =
-        rack::createInputCentered<DANT::Port>(DANT::layout(4.0f, 5.0f), module, AtocrModule::ATV_CV_INPUT);
+        rack::createInputCentered<DANT::Port>(DANT::layout(4.0f, 5.0f), module, AocrModule::ATV_CV_INPUT);
 
     orderSwitch = rack::createParamCentered<rack::componentlibrary::CKSS>(DANT::layout(4.5f, 6.5f), module,
-                                                                          AtocrModule::ORDER_PARAM);
+                                                                          AocrModule::ORDER_PARAM);
 
-    offsetKnob = rack::createParamCentered<DANT::Knob>(DANT::layout(4.0f, 8.5f), module, AtocrModule::OFS_PARAM);
+    offsetKnob = rack::createParamCentered<DANT::Knob>(DANT::layout(4.0f, 8.5f), module, AocrModule::OFS_PARAM);
     offsetKnob->vizType = DANT::BIPARC;
     offsetKnob->numNotches = 3;
-    offsetKnob->inputId = AtocrModule::OFS_CV_INPUT;
-    offsetKnob->cvAttId = AtocrModule::OFS_CV_ATV_PARAM;
+    offsetKnob->inputId = AocrModule::OFS_CV_INPUT;
+    offsetKnob->cvAttId = AocrModule::OFS_CV_ATV_PARAM;
 
     offsetCvTrimpot =
-        rack::createParamCentered<DANT::Trimpot>(DANT::layout(2.0f, 7.5f), module, AtocrModule::OFS_CV_ATV_PARAM);
+        rack::createParamCentered<DANT::Trimpot>(DANT::layout(2.0f, 7.5f), module, AocrModule::OFS_CV_ATV_PARAM);
 
-    offsetCvInput = rack::createInputCentered<DANT::Port>(DANT::layout(2.0f, 8.5f), module, AtocrModule::OFS_CV_INPUT);
+    offsetCvInput = rack::createInputCentered<DANT::Port>(DANT::layout(2.0f, 8.5f), module, AocrModule::OFS_CV_INPUT);
 
     clipSwitch = rack::createParamCentered<rack::componentlibrary::CKSSThree>(DANT::layout(1.5f, 10.0f), module,
-                                                                              AtocrModule::CLIP_PARAM);
+                                                                              AocrModule::CLIP_PARAM);
 
     rectifySwitch = rack::createParamCentered<rack::componentlibrary::CKSSThree>(DANT::layout(4.5f, 12.0f), module,
-                                                                                 AtocrModule::RECT_PARAM);
+                                                                                 AocrModule::RECT_PARAM);
 
     signalOutGridLight = rack::createWidgetCentered<DANT::GridLight>(DANT::layout(1.5f, 15.0f));
     signalOutGridLight->fullMode();
@@ -291,8 +291,7 @@ struct AtocrWidget : DANT::ModuleWidget {
       signalOutGridLight->channelValues = module->outputSignalGridLights;  // array decays into pointer to 1st element
     }
 
-    testOutputPort =
-        rack::createOutputCentered<DANT::Port>(DANT::layout(3.0f, 15.0f), module, AtocrModule::SGNL_OUTPUT);
+    testOutputPort = rack::createOutputCentered<DANT::Port>(DANT::layout(3.0f, 15.0f), module, AocrModule::SGNL_OUTPUT);
     testOutputPort->isOutput = true;
 
     // add components
@@ -312,7 +311,7 @@ struct AtocrWidget : DANT::ModuleWidget {
   }
 
   // used by the common code to draw the module title
-  std::string moduleName() override { return "atocr"; }
+  std::string moduleName() override { return "AOCR"; }
 
   void draw(const rack::widget::Widget::DrawArgs &args) override {
     DANT::ModuleWidget::draw(args);  // call common draw method for panel first
@@ -374,4 +373,4 @@ struct AtocrWidget : DANT::ModuleWidget {
 /**
  * Create model and register with the plugin.
  */
-rack::plugin::Model *modelAtocr = rack::createModel<AtocrModule, AtocrWidget>("atocr");
+rack::plugin::Model *modelAtocr = rack::createModel<AocrModule, AocrWidget>("AOCR");

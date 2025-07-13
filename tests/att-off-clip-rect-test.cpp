@@ -1,4 +1,4 @@
-#include "../src/dsp/levels.hpp"
+#include "../src/dsp/att-off-clip-rect.hpp"
 
 #include <rack.hpp>
 
@@ -16,7 +16,7 @@ void require_float4_approx_equal(const rack::simd::float_4& input, const rack::s
   }
 }
 
-TEST_CASE("levels.hpp::attenuvertOffsetClipRectify") {
+TEST_CASE("att-off-clip-rect.hpp::attenuvertOffsetClipRectify") {
   SECTION("Default options") {
     DANT::AtOCROpts opts;  // Default options: 1.0f attenuversion, 0.0f offset, NO_CLIP, NO_RECT
     rack::simd::float_4 inSignals = rack::simd::float_4(1.0f, -2.0f, 0.0f, 5.5f);

@@ -6,7 +6,7 @@
 
 extern rack::plugin::Plugin *pluginInstance;
 
-extern rack::plugin::Model *modelAtocr;
+extern rack::plugin::Model *modelAocr;
 
 /**
  * Layout variables, _X is half a HP. Add widgets centred at x position HP * 2 - 1.

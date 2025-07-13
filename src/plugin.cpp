@@ -5,7 +5,7 @@ rack::plugin::Plugin *pluginInstance;
 void init(rack::plugin::Plugin *p) {
   pluginInstance = p;
 
-  p->addModel(modelAtocr);
+  p->addModel(modelAocr);
 }
 
 float DANT::PANEL_R_B{DANT::DEFAULT_R_B};

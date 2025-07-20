@@ -1,0 +1,17 @@
+{
+    "slug": "DanTSynth",
+    "name": "DanTSynth",
+    "version": "2.0.0",
+    "license": "GPL-3.0-or-later",
+    "brand": "DanT",
+    "author": "dtilley",
+    "authorUrl": "https://www.youtube.com/@MiffReal",
+    "donateUrl": "https://ko-fi.com/dantsynth",
+    "modules": [
+        {
+            "slug": "AOCR",
+            "name": "AOCR",
+            "description": "[5HP][Polyphonic] Attenuverter & Offset & Clip & Rectify. Reorderable."
+        }
+    ]
+}

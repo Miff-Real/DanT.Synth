@@ -1,0 +1,5 @@
+﻿BasedOnStyle: Google
+ColumnLimit: 120
+IndentWidth: 2
+Language: Cpp
+TabWidth: 2

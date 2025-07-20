@@ -1,0 +1,149 @@
+# Sets the name of the workflow, which is displayed in the GitHub Actions UI.
+name: Build VCV Rack Plugin
+
+# Specifies the trigger for this workflow.
+on:
+  # Triggers the workflow on push events but only for the 'main' branch.
+  push:
+    branches: [ main ]
+  # Allows you to run this workflow manually from the Actions tab.
+  workflow_dispatch:
+
+# Defines environment variables that are available to all jobs and steps
+# in this workflow. This is a good place for settings you might want to
+# update in one place.
+env:
+  rack-sdk-version: 2.6.3
+  rack-plugin-toolchain-dir: /home/build/rack-plugin-toolchain
+  rack-plugin-name: DanTSynth
+
+# Sets default settings for all 'run' steps within the workflow.
+defaults:
+  run:
+    # Specifies that all 'run' steps should use the Bash shell.
+    shell: bash
+
+# This section defines all the jobs that the workflow will execute.
+# Jobs run in parallel by default unless dependencies are specified.
+jobs:
+  # This is the first job, named 'build'. It handles the Windows and Linux builds.
+  build:
+    # The name of the job as it appears in the UI. It's dynamically set
+    # from the 'platform' value in the build matrix (e.g., "win-x64").
+    name: ${{ matrix.platform }}
+    # Specifies the type of machine to run the job on. Here, it's an
+    # Ubuntu 24.04 runner.
+    runs-on: ubuntu-24.04
+    # This job will run inside a Docker container, ensuring a consistent
+    # and isolated build environment.
+    container:
+      # The Docker image to use for the job. This image contains the necessary
+      # toolchain for building VCV Rack plugins for Windows and Linux.
+      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux:rack-sdk-2.6.3
+      # Runs commands inside the container as the 'root' user.
+      options: --user root
+    # Defines a build matrix. This allows you to run the same job multiple
+    # times with different configurations.
+    strategy:
+      matrix:
+        # The job will run twice: once with 'platform' set to 'win-x64' and
+        # once with it set to 'lin-x64'.
+        platform: [win-x64, lin-x64]
+    # Contains the sequence of tasks that will be executed in this job.
+    steps:
+      # This step uses a pre-made action to check out your repository's code
+      # onto the runner. The version is pinned for consistency.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # This option ensures that any Git submodules are also downloaded.
+          submodules: recursive
+      # This step caches the plugin.json file. Caching helps to speed up
+      # future workflow runs by reusing files from previous runs.
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        id: plugin-version-cache
+        with:
+          # The path to the file or directory to cache.
+          path: plugin.json
+          # The key for the cache. A cache hit only occurs if this key matches
+          # a key from a previous run. Using the Git commit SHA ensures uniqueness.
+          key: ${{ github.sha }}-${{ github.run_id }}
+      # A custom step to build the plugin.
+      - name: Build plugin
+        run: |
+          # Set the PLUGIN_DIR environment variable for the build script.
+          export PLUGIN_DIR=$GITHUB_WORKSPACE
+          # Change directory to the toolchain directory.
+          pushd ${{ env.rack-plugin-toolchain-dir }}
+          # Run the make command to build the plugin for the specific platform
+          # from the matrix.
+          make plugin-build-${{ matrix.platform }}
+      # This step uploads the compiled plugin as a build artifact.
+      - name: Upload artifact
+        # Uses a pre-made action for uploading artifacts.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # If an artifact with the same name already exists, it will be replaced.
+          overwrite: true
+          # The path to the directory containing the build output to upload.
+          path: ${{ env.rack-plugin-toolchain-dir }}/plugin-build
+          # The name for the artifact, which will be available for download
+          # from the workflow run page.
+          name: ${{ env.rack-plugin-name }}-${{ matrix.platform }}
+
+  # This is the second job, specifically for building on macOS.
+  build-mac:
+    # The name of the job as it appears in the UI.
+    name: mac
+    # Specifies that this job runs on a macOS 14 runner.
+    runs-on: macos-14
+    strategy:
+      # If one of the matrix jobs fails, the other jobs will continue to run.
+      fail-fast: false
+      # This matrix runs the job for both Intel (x64) and Apple Silicon (arm64)
+      # architectures on macOS.
+      matrix:
+        platform: [x64, arm64]
+    steps:
+      # Checks out the repository code, including submodules.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+      # Caches the plugin.json file, similar to the previous job.
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        id: plugin-version-cache
+        with:
+          path: plugin.json
+          key: ${{ github.sha }}-${{ github.run_id }}
+      # A custom step to download and prepare the VCV Rack SDK.
+      - name: Get Rack-SDK
+        run: |
+          # Change to the home directory.
+          pushd $HOME
+          # Download the correct SDK version for the platform from the matrix.
+          wget -O Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-${{ env.rack-sdk-version }}-mac-${{ matrix.platform }}.zip
+          # Unzip the downloaded SDK.
+          unzip Rack-SDK.zip
+      # A custom step to build the plugin on macOS.
+      - name: Build plugin
+        run: |
+          # Set up variables for cross-compilation targets.
+          CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin
+          CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin
+          # Set the RACK_DIR environment variable to the location of the unzipped SDK.
+          export RACK_DIR=$HOME/Rack-SDK
+          # Set the appropriate cross-compilation target based on the matrix platform.
+          export CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}
+          # Run make to build dependencies.
+          make dep
+          # Run make to create the final distributable plugin file.
+          make dist
+      # Uploads the compiled macOS plugin as a build artifact.
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          # Overwrite existing artifacts with the same name.
+          overwrite: true
+          # The path to the final .vcvplugin file to be uploaded.
+          path: dist/*.vcvplugin
+          # The name for the artifact, including the macOS architecture.
+          name: ${{ env.rack-plugin-name }}-mac-${{ matrix.platform }}

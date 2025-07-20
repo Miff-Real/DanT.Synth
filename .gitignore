@@ -30,3 +30,15 @@
 *.exe
 *.out
 *.app
+
+# Rack
+build/
+dist/
+test_bin/
+plugin.so
+plugin.dylib
+plugin-arm64.dylib
+plugin.dll
+
+# MacOS
+.DS_Store

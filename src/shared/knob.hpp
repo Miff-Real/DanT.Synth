@@ -77,8 +77,8 @@ struct Knob : rack::componentlibrary::RoundKnob {
   float getCvValue(const bool bip = false) {
     if (this->inputId > -1 && this->module) {
       float v{this->module->inputs[this->inputId].getNormalVoltage(0.0f)};
-      float minCv{bip ? -5.0f : 0.0f};
-      float maxCv{bip ? 5.0f : 10.0f};
+      float minCv{bip ? -10.0f : 0.0f};
+      float maxCv{10.0f};
       return rack::math::rescale(v, minCv * this->cvScaler, maxCv * this->cvScaler, 0.0f, 1.0f);
     }
     return 0.0f;

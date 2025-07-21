@@ -323,6 +323,14 @@ struct OpOrderWidget : rack::widget::TransparentWidget {
   void draw(const rack::widget::Widget::DrawArgs &args) override {
     nvgSave(args.vg);
 
+    NVGcolor opOrderBG{DANT::Colours::getTextColour()};
+    opOrderBG.a = 0.5f;
+
+    nvgFillColor(args.vg, opOrderBG);
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, -5.0f, -2.5f, this->box.size.x + 10.0f, this->box.size.y + 5.0f, 5.0f);
+    nvgFill(args.vg);
+
     nvgStrokeColor(args.vg, nvgRGB(0, 0, 0));
     nvgStrokeWidth(args.vg, 1.0f);
 

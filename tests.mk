@@ -7,8 +7,9 @@ TEST_SOURCES = $(wildcard $(TEST_DIR)/*.cpp)
 TEST_OBJECTS = $(patsubst $(TEST_DIR)/%.cpp, $(TEST_OBJECTS_DIR)/%.o, $(TEST_SOURCES))
 TEST_INCLUDE_DIRS = -Isrc/dsp -I$(CATCH2_DIR) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
 TEST_CXX = g++
-TEST_CXXFLAGS = -std=c++11 -Wall -Wextra -g -Wno-unused-parameter
-TEST_LDFLAGS = -L$(RACK_DIR) -lRack -Wl,-rpath,$(RACK_DIR)
+ARCH_FLAG := $(if $(ARCH),-arch $(ARCH),)
+TEST_CXXFLAGS = -std=c++11 -Wall -Wextra -g -Wno-unused-parameter $(ARCH_FLAG)
+TEST_LDFLAGS = -L$(RACK_DIR) -lRack -Wl,-rpath,$(RACK_DIR) $(ARCH_FLAG)
 
 .PHONY: test clean_tests
 

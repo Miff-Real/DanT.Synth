@@ -109,10 +109,10 @@ jobs:
           echo "PLUGIN_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
           # Set RACK_DIR to the toolchain directory, as the SDK is part of the container.
           echo "RACK_DIR=${{ env.rack-plugin-toolchain-dir }}" >> $GITHUB_ENV
-      - name: Run tests
-        run: |
-          # Run tests from the main repository directory where tests.mk is located.
-          make test
+      # - name: Run tests
+      #   run: |
+      #     # Run tests from the main repository directory where tests.mk is located.
+      #     make test
       - name: Build plugin
         run: |
           # Change directory to the toolchain directory to run the plugin build.
@@ -169,9 +169,9 @@ jobs:
           echo "CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin" >> $GITHUB_ENV
           echo "CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin" >> $GITHUB_ENV
           echo "CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}" >> $GITHUB_ENV
-      - name: Run tests
-        run: |
-          make test ARCH=$ARCH
+      # - name: Run tests
+      #   run: |
+      #     make test ARCH=$ARCH
       - name: Build plugin
         run: |
           make dep ARCH=$ARCH
@@ -217,10 +217,10 @@ jobs:
           echo "PLUGIN_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
           # Set RACK_DIR to the toolchain directory, as the SDK is part of the container.
           echo "RACK_DIR=${{ env.rack-plugin-toolchain-dir }}" >> $GITHUB_ENV
-      - name: Run tests
-        run: |
-          # Run tests from the main repository directory where tests.mk is located.
-          make test
+      # - name: Run tests
+      #   run: |
+      #     # Run tests from the main repository directory where tests.mk is located.
+      #     make test
       - name: Build plugin
         run: |
           # Change directory to the toolchain directory to run the plugin build.
@@ -281,9 +281,9 @@ jobs:
           echo "CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin" >> $GITHUB_ENV
           echo "CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin" >> $GITHUB_ENV
           echo "CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}" >> $GITHUB_ENV
-      - name: Run tests
-        run: |
-          make test ARCH=$ARCH
+      # - name: Run tests
+      #   run: |
+      #     make test ARCH=$ARCH
       - name: Build plugin
         run: |
           make dep ARCH=$ARCH

@@ -338,11 +338,13 @@ jobs:
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: _artifacts/**/*.vcvplugin
           tag: Nightly
           file_glob: true
+          file: _artifacts/**/*.vcvplugin
+          overwrite: true
           release_name: "Release ${{ github.ref_name }}"
           prerelease: false
+          make_latest: true
           body: ${{ steps.stable_release_notes.outputs.release_body }}
 
   # Job to publish nightly releases to GitHub.
@@ -391,9 +393,10 @@ jobs:
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: _artifacts/**/*.vcvplugin
           tag: Nightly
           file_glob: true
+          file: _artifacts/**/*.vcvplugin
+          overwrite: true
           release_name: "Nightly Build - ${{ github.sha }}"
           prerelease: true
           body: ${{ steps.nightly_release_notes.outputs.release_body }}

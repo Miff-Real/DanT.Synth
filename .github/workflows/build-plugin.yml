@@ -369,7 +369,7 @@ jobs:
         id: nightly_release_notes
         run: |
           CURRENT_NIGHTLY_TAG="nightly-${{ github.sha }}"
-          PREVIOUS_NIGHTLY_TAG=$(git tag -l "nightly-*" | sort -rV | grep -A 1 "${CURRENT_NIGHTLY_TAG}" | tail -n 1)
+          PREVIOUS_NIGHTLY_TAG=$(git tag -l "nightly-*" | sort -rV | head -n 2 | tail -n 1)
           if [ -z "$PREVIOUS_NIGHTLY_TAG" ]; then
             echo "No previous nightly tag found. Listing last 20 commits on 'dev' branch."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" -n 20)

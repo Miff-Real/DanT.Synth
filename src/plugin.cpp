@@ -6,6 +6,7 @@ void init(rack::plugin::Plugin *p) {
   pluginInstance = p;
 
   p->addModel(modelAocr);
+  p->addModel(modelVizWiz);
 }
 
 float DANT::PANEL_R_B{DANT::DEFAULT_R_B};

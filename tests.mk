@@ -21,7 +21,7 @@ $(TEST_OBJECTS_DIR)/%.o: $(TEST_DIR)/%.cpp
 	@mkdir -p $(@D) # Create the test_objects directory if it doesn't exist
 	$(TEST_CXX) $(TEST_CXXFLAGS) $(TEST_INCLUDE_DIRS) -c $< -o $@
 
-test: $(TEST_EXECUTABLE)
+test: clean_tests $(TEST_EXECUTABLE)
 	@echo "Running Catch2 Unit Tests..."
 	./$(TEST_EXECUTABLE) -s -r dant
 

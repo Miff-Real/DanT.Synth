@@ -390,7 +390,7 @@ jobs:
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: nightly-${{ github.sha }}
+          tag: ${{ github.ref }}
           release_name: "Nightly Build - ${{ github.sha }}"
           prerelease: true
           body: ${{ steps.nightly_release_notes.outputs.release_body }}

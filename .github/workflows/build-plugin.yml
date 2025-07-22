@@ -315,6 +315,12 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: _artifacts
+      - name: Delete old release assets
+        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: Nightly
+          deleteOnlyFromDrafts: false
       # Generate release notes for stable releases.
       - name: Generate Stable Release Notes
         id: stable_release_notes
@@ -367,6 +373,12 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: _artifacts
+      - name: Delete old release assets
+        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: Nightly
+          deleteOnlyFromDrafts: false
       # Generate release notes for nightly builds.
       - name: Generate Nightly Release Notes
         id: nightly_release_notes

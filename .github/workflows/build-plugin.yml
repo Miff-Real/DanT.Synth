@@ -30,10 +30,10 @@ defaults:
 # This section defines all the jobs that the workflow will execute.
 # Jobs run in parallel by default unless dependencies are specified.
 jobs:
-  # Check if the 'version' property in plugin.json has changed on the main branch.
+  # Check if the 'version' property in plugin.json has changed.
   check-version-change:
-    # This job runs only on push events to the 'main' branch.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # This job runs on any push event. Its logic will determine if a relevant version change occurred.
+    if: github.event_name == 'push'
     name: Check Plugin Version Change
     runs-on: ubuntu-24.04
     outputs:
@@ -45,10 +45,15 @@ jobs:
         with:
           # Fetch depth of 2 to get current and previous commit for comparison.
           fetch-depth: 2
+      # Configure Git to trust the repository directory for operations.
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
       # Step to compare plugin.json versions and set an output.
       - name: Compare plugin.json versions
         id: version_check # ID for this step to reference its outputs.
         run: |
+          PREVIOUS_VERSION=""
+          CURRENT_VERSION=""
           # Get the version from plugin.json in the current commit (HEAD).
           CURRENT_VERSION=$(jq -r .version plugin.json)
           # Get the version from plugin.json in the previous commit (HEAD~1).
@@ -60,14 +65,15 @@ jobs:
             echo "version_changed=true" >> $GITHUB_OUTPUT
           else
             echo "Plugin version has NOT changed. Current: $CURRENT_VERSION, Previous: $PREVIOUS_VERSION."
-            # Set the output variable to false if versions are the same.
+            # Set the output variable to false otherwise.
             echo "version_changed=false" >> $GITHUB_OUTPUT
           fi
 
   # This job handles the Windows and Linux stable builds.
   build-lin-win:
     # This job runs only if the 'check-version-change' job indicates a version change,
-    # or if a tag is pushed (for stable releases).
+    # or if a tag is pushed.
+    # The 'needs' dependency ensures 'check-version-change' completes, and its output is used.
     if: (github.ref == 'refs/heads/main' && needs.check-version-change.outputs.version_changed == 'true') || startsWith(github.ref, 'refs/tags/')
     # This job depends on the check-version-change job to get its output.
     needs: check-version-change
@@ -92,48 +98,33 @@ jobs:
         platform: [lin-x64, win-x64]
     # Contains the sequence of tasks that will be executed in this job.
     steps:
-      # This step uses a pre-made action to check out your repository's code
+      # This step uses a pre-made action to check out the repository code
       # onto the runner. The version is pinned for better security.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          # This option ensures that any Git submodules are also downloaded.
           submodules: recursive
-      # Run the tests before building.
       - name: Run tests
         run: |
-          # Set the PLUGIN_DIR environment variable for the build script.
           export PLUGIN_DIR=$GITHUB_WORKSPACE
-          # Change directory to the toolchain directory.
           pushd ${{ env.rack-plugin-toolchain-dir }}
-          # Run the tests.
           make test
-      # A custom step to build the plugin.
       - name: Build plugin
         run: |
-          # Set the PLUGIN_DIR environment variable for the build script.
           export PLUGIN_DIR=$GITHUB_WORKSPACE
-          # Change directory to the toolchain directory.
           pushd ${{ env.rack-plugin-toolchain-dir }}
-          # Run the make command to build the plugin for the specific platform
-          # from the matrix.
           make plugin-build-${{ matrix.platform }}
-      # This step uploads the compiled plugin as a build artifact.
       - name: Upload artifact
-        # Uses a pre-made action for uploading artifacts.
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          # If an artifact with the same name already exists, it will be replaced.
           overwrite: true
-          # The path to the directory containing the build output to upload.
           path: ${{ env.rack-plugin-toolchain-dir }}/plugin-build
-          # The name for the artifact, which will be available for download
-          # from the workflow run page.
           name: ${{ env.rack-plugin-name }}-${{ matrix.platform }}
 
   # This is the job for building on macOS.
   build-mac:
     # This job runs only if the 'check-version-change' job indicates a version change,
-    # or if a tag is pushed (for stable releases).
+    # or if a tag is pushed.
+    # The 'needs' dependency ensures 'check-version-change' completes, and its output is used.
     if: (github.ref == 'refs/heads/main' && needs.check-version-change.outputs.version_changed == 'true') || startsWith(github.ref, 'refs/tags/')
     # This job depends on the check-version-change job to get its output.
     needs: check-version-change
@@ -154,25 +145,17 @@ jobs:
       # A custom step to download and prepare the VCV Rack SDK.
       - name: Get Rack-SDK
         run: |
-          # Change to the home directory.
           pushd $HOME
-          # Download the correct SDK version for the platform from the matrix.
           wget -O Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-${{ env.rack-sdk-version }}-mac-${{ matrix.platform }}.zip
-          # Unzip the downloaded SDK.
           unzip Rack-SDK.zip
       # Run the tests before building.
       - name: Run tests
         run: |
-          # Set up variables for cross-compilation targets.
-          CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin
-          CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin
-          # Set the RACK_DIR environment variable to the location of the unzipped SDK.
           export RACK_DIR=$HOME/Rack-SDK
-          # Set the appropriate cross-compilation target based on the matrix platform.
+          export CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin
+          export CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin
           export CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}
-          # Run the tests.
           make test
-      # A custom step to build the plugin on macOS.
       - name: Build plugin
         run: |
           export RACK_DIR=$HOME/Rack-SDK
@@ -181,15 +164,11 @@ jobs:
           export CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}
           make dep
           make dist
-      # Uploads the compiled macOS plugin as a build artifact.
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          # Overwrite existing artifacts with the same name.
           overwrite: true
-          # The path to the final .vcvplugin file to be uploaded.
           path: dist/*.vcvplugin
-          # The name for the artifact, including the macOS architecture.
           name: ${{ env.rack-plugin-name }}-mac-${{ matrix.platform }}
 
   # This job handles the Windows and Linux NIGHTLY builds from the 'dev' branch.
@@ -205,9 +184,13 @@ jobs:
       matrix:
         platform: [lin-x64, win-x64]
     steps:
+      # Checkout the repository code.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
+      # Configure Git to trust the repository directory for operations within the container.
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
       # This step appends the commit hash to the version in plugin.json.
       - name: Update version for nightly build
         run: |
@@ -244,9 +227,13 @@ jobs:
       matrix:
         platform: [arm64, x64]
     steps:
+      # Checkout the repository code.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
+      # Configure Git to trust the repository directory for operations within the runner.
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
       - name: Update version for nightly build
         run: |
           current_version=$(jq -r .version plugin.json)
@@ -281,70 +268,88 @@ jobs:
           path: dist/*.vcvplugin
           name: ${{ env.rack-plugin-name }}-mac-${{ matrix.platform }}-nightly
 
-  # Publish releases to GitHub.
-  release:
-    # This job runs only after all required build jobs have successfully completed.
-    # It depends on both stable and nightly build jobs, but will only run conditionally.
-    needs: [build-lin-win, build-mac, build-nightly-lin-win, build-nightly-mac]
-    # The job runs on an Ubuntu runner.
+  # Job to publish stable releases to GitHub.
+  release-stable:
+    # This job depends on the stable build jobs.
+    needs:
+      - build-lin-win
+      - build-mac
     runs-on: ubuntu-24.04
     steps:
       # Checkout the repository code to access Git history for release notes.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          # Fetch all history for accurate git log.
           fetch-depth: 0
-      # Download all artifacts from the completed build jobs.
-      - name: Download all build artifacts
+      # Configure Git to trust the repository directory for operations.
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+      # Download all stable build artifacts.
+      - name: Download stable build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          # Download all artifacts into a common directory.
           path: release-assets
-      # Generate release notes for stable releases (triggered by a tag).
+      # Generate release notes for stable releases.
       - name: Generate Stable Release Notes
         id: stable_release_notes
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          # Get the current tag name (e.g., v1.0.0).
           CURRENT_TAG=${{ github.ref_name }}
-          # Find the previous tag. This attempts to find the tag immediately preceding the current one.
-          # If no previous tag is found, it will list all commits up to the current tag.
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${CURRENT_TAG}^ 2>/dev/null || echo "")
           if [ -z "$PREVIOUS_TAG" ]; then
-            # If no previous tag found, list all commits up to the current tag.
             echo "No previous tag found. Listing all commits up to ${CURRENT_TAG}."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${CURRENT_TAG})
           else
-            # List commits between the previous tag and the current tag.
             echo "Generating notes from ${PREVIOUS_TAG} to ${CURRENT_TAG}."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${PREVIOUS_TAG}..${CURRENT_TAG})
           fi
-          # Set the output variable for release notes.
           echo "release_body<<EOF" >> $GITHUB_OUTPUT
           echo "## Changes in ${{ github.ref_name }}" >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+      # Create and upload the stable release.
+      - name: Create Stable GitHub Release
+        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref }}
+          release_name: "Release ${{ github.ref_name }}"
+          prerelease: false
+          body: ${{ steps.stable_release_notes.outputs.release_body }}
+          file: release-assets/*
+
+  # Job to publish nightly releases to GitHub.
+  release-nightly:
+    # This job depends on the nightly build jobs.
+    needs:
+      - build-nightly-lin-win
+      - build-nightly-mac
+    runs-on: ubuntu-24.04
+    steps:
+      # Checkout the repository code to access Git history for release notes.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      # Configure Git to trust the repository directory for operations.
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+      # Download all nightly build artifacts.
+      - name: Download nightly build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: release-assets
       # Generate release notes for nightly builds.
       - name: Generate Nightly Release Notes
         id: nightly_release_notes
-        if: github.ref == 'refs/heads/dev'
         run: |
-          # Get the current nightly tag (e.g., nightly-abcdef1).
           CURRENT_NIGHTLY_TAG="nightly-${{ github.sha }}"
-          # Find the previous nightly tag. This lists all 'nightly-*' tags, sorts them descending,
-          # finds the current tag, then takes the next one in the sorted list (which is the previous one).
           PREVIOUS_NIGHTLY_TAG=$(git tag -l "nightly-*" | sort -rV | grep -A 1 "${CURRENT_NIGHTLY_TAG}" | tail -n 1)
           if [ -z "$PREVIOUS_NIGHTLY_TAG" ]; then
-            # If no previous nightly tag found, list the last 20 commits on the 'dev' branch.
             echo "No previous nightly tag found. Listing last 20 commits on 'dev' branch."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" -n 20)
           else
-            # List commits between the previous nightly tag and the current commit.
             echo "Generating nightly notes from ${PREVIOUS_NIGHTLY_TAG} to ${CURRENT_NIGHTLY_TAG}."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${PREVIOUS_NIGHTLY_TAG}..HEAD)
           fi
-          # Set the output variable for release notes.
           echo "release_body<<EOF" >> $GITHUB_OUTPUT
           echo "## Nightly Build - ${{ github.sha }}" >> $GITHUB_OUTPUT
           echo "" >> $GITHUB_OUTPUT
@@ -353,37 +358,13 @@ jobs:
           echo "### Recent Commits:" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      # Create and upload the stable release.
-      - name: Create Stable GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
-        with:
-          # Use the GITHUB_TOKEN for authentication.
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The tag name is the Git ref itself (e.g., refs/tags/v1.0.0).
-          tag: ${{ github.ref }}
-          # The release name is the tag name without 'refs/tags/'.
-          release_name: "Release ${{ github.ref_name }}"
-          # This is not a pre-release.
-          prerelease: false
-          # Use the generated release notes.
-          body: ${{ steps.stable_release_notes.outputs.release_body }}
-          # Upload all files from the 'release-assets' directory.
-          file: release-assets/*
       # Create and upload the nightly release.
       - name: Create Nightly GitHub Release
-        if: github.ref == 'refs/heads/dev'
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
-          # Use the GITHUB_TOKEN for authentication.
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          # The tag for nightly builds includes 'nightly' and the commit SHA.
           tag: nightly-${{ github.sha }}
-          # The release name for nightly builds.
           release_name: "Nightly Build - ${{ github.sha }}"
-          # This is a pre-release.
           prerelease: true
-          # Use the generated release notes.
           body: ${{ steps.nightly_release_notes.outputs.release_body }}
-          # Upload all files from the 'release-assets' directory.
           file: release-assets/*

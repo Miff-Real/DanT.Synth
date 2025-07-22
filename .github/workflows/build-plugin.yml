@@ -342,6 +342,7 @@ jobs:
           release_name: "Release ${{ github.ref_name }}"
           prerelease: false
           body: ${{ steps.stable_release_notes.outputs.release_body }}
+          file_glob: true
           file: release-assets/*
 
   # Job to publish nightly releases to GitHub.
@@ -394,4 +395,5 @@ jobs:
           release_name: "Nightly Build - ${{ github.sha }}"
           prerelease: true
           body: ${{ steps.nightly_release_notes.outputs.release_body }}
+          file_glob: true
           file: release-assets/*

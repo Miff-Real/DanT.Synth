@@ -314,7 +314,7 @@ jobs:
       - name: Download stable build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: release-assets
+          path: _artifacts
       # Generate release notes for stable releases.
       - name: Generate Stable Release Notes
         id: stable_release_notes
@@ -338,12 +338,12 @@ jobs:
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ github.ref }}
+          file: _artifacts/**/*.vcvplugin
+          tag: Nightly
+          file_glob: true
           release_name: "Release ${{ github.ref_name }}"
           prerelease: false
           body: ${{ steps.stable_release_notes.outputs.release_body }}
-          file_glob: true
-          file: release-assets/*
 
   # Job to publish nightly releases to GitHub.
   release-nightly:
@@ -364,7 +364,7 @@ jobs:
       - name: Download nightly build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: release-assets
+          path: _artifacts
       # Generate release notes for nightly builds.
       - name: Generate Nightly Release Notes
         id: nightly_release_notes
@@ -391,9 +391,9 @@ jobs:
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: _artifacts/**/*.vcvplugin
           tag: Nightly
+          file_glob: true
           release_name: "Nightly Build - ${{ github.sha }}"
           prerelease: true
           body: ${{ steps.nightly_release_notes.outputs.release_body }}
-          file_glob: true
-          file: release-assets/*

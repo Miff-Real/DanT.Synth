@@ -12,11 +12,6 @@
             "slug": "AOCR",
             "name": "AOCR",
             "description": "[5HP][Polyphonic] Attenuverter & Offset & Clip & Rectify. Reorderable."
-        },
-        {
-            "slug": "VizWiz",
-            "name": "VizWiz",
-            "description": "[HP]"
         }
     ]
 }

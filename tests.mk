@@ -5,18 +5,25 @@ TEST_OBJECTS_DIR = test_objects
 TEST_EXECUTABLE = $(TEST_BIN_DIR)/test_runner
 TEST_SOURCES = $(wildcard $(TEST_DIR)/*.cpp)
 TEST_OBJECTS = $(patsubst $(TEST_DIR)/%.cpp, $(TEST_OBJECTS_DIR)/%.o, $(TEST_SOURCES))
-TEST_INCLUDE_DIRS = -Isrc/dsp -I$(CATCH2_DIR) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
+TEST_INCLUDE_DIRS = -L/mingw64/lib -Isrc/dsp -I$(CATCH2_DIR) -I$(RACK_DIR) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
 TEST_CXX = g++
 ARCH_FLAG := $(if $(ARCH),-arch $(ARCH),)
 TEST_CXXFLAGS = -std=c++11 -Wall -Wextra -g -Wno-unused-parameter $(ARCH_FLAG)
-TEST_LDFLAGS = -L$(RACK_DIR) -lRack -Wl,-rpath,$(RACK_DIR) $(ARCH_FLAG)
+ifeq ($(RACK_OS), mac)
+	TEST_LDFLAGS += -L$(RACK_DIR) -lRack -Wl,-rpath,$(RACK_DIR) $(ARCH_FLAG)
+else
+	TEST_LDFLAGS += -L$(RACK_DIR) -lRack -lnanovg
+	RACK_APP_DIR = "/c/Program Files/VCV/Rack2Pro"
+endif
 
 .PHONY: test clean_tests
 
 $(TEST_EXECUTABLE): $(TEST_OBJECTS)
 	@mkdir -p $(@D)
-	$(TEST_CXX) $(TEST_CXXFLAGS) $(TEST_LDFLAGS) $^ -o $@
+	$(TEST_CXX) $(TEST_CXXFLAGS) $^ $(TEST_LDFLAGS) -o $@
+ifeq ($(RACK_OS), mac)
 	install_name_tool -change libRack.dylib $(RACK_DIR)/libRack.dylib $@
+endif
 
 $(TEST_OBJECTS_DIR)/%.o: $(TEST_DIR)/%.cpp
 	@mkdir -p $(@D) # Create the test_objects directory if it doesn't exist
@@ -24,7 +31,11 @@ $(TEST_OBJECTS_DIR)/%.o: $(TEST_DIR)/%.cpp
 
 test: clean_tests $(TEST_EXECUTABLE)
 	@echo "Running Catch2 Unit Tests..."
+ifeq ($(RACK_OS), mac)
 	./$(TEST_EXECUTABLE) -s -r dant
+else
+	@export PATH=$(RACK_APP_DIR):$$PATH; echo "Debug PATH: $$PATH" && ./$(TEST_EXECUTABLE) -s -r dant
+endif
 
 clean_tests:
 	@echo "Cleaning unit test artifacts..."

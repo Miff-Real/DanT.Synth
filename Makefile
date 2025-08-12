@@ -1,5 +1,5 @@
 # If RACK_DIR is not defined default to a parallel directory
-RACK_DIR ?= ../..
+RACK_DIR ?= ../
 
 # FLAGS will be passed to both the C and C++ compiler
 FLAGS +=

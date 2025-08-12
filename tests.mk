@@ -12,7 +12,7 @@ ifeq ($(ARCH_OS), mac)
 	TEST_INCLUDE_DIRS = -Isrc/dsp -I$(CATCH2_DIR) -I$(RACK_DIR) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
 	TEST_LDFLAGS += -L$(RACK_DIR) -lRack -Wl,-rpath,$(RACK_DIR) $(ARCH_FLAG)
 else
-	RACK_APP_DIR = "/c/Program Files/VCV/Rack2 Pro/"
+	RACK_APP_DIR = "/c/Program Files/VCV/Rack2Pro/"
 	TEST_INCLUDE_DIRS = -Isrc/dsp -I$(CATCH2_DIR) -I$(RACK_DIR)/include -I$(RACK_DIR)/dep/include
 	TEST_LDFLAGS += -L$(RACK_APP_DIR) -lRack -lnanovg
 endif

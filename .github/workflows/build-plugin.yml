@@ -306,31 +306,31 @@ jobs:
       # Checkout the repository code to access Git history for release notes.
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          # Fetch all history for all branches and tags.
           fetch-depth: 0
       # Configure Git to trust the repository directory for operations.
       - name: Configure Git safe directory
         run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+      # Get the version from plugin.json and prepend 'v' to use in the tag name.
+      - name: Get version
+        id: get_version
+        run: echo "VERSION_STR=v$(jq -r .version plugin.json)" >> $GITHUB_ENV
       # Download all stable build artifacts.
       - name: Download stable build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: _artifacts
-      - name: Delete old release assets
-        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: Nightly
-          deleteOnlyFromDrafts: false
       # Generate release notes for stable releases.
       - name: Generate Stable Release Notes
         id: stable_release_notes
         run: |
-          CURRENT_TAG=${{ github.ref_name }}
+          CURRENT_TAG=${{ env.VERSION_STR }}
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${CURRENT_TAG}^ 2>/dev/null || echo "")
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "No previous tag found. Listing all commits up to ${CURRENT_TAG}."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${CURRENT_TAG})
           else
+            echo "PREV_VERSION_STR=${PREVIOUS_TAG}" >> $GITHUB_ENV
             echo "Generating notes from ${PREVIOUS_TAG} to ${CURRENT_TAG}."
             RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${PREVIOUS_TAG}..${CURRENT_TAG})
           fi
@@ -339,16 +339,24 @@ jobs:
           echo "" >> $GITHUB_OUTPUT
           echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+      # Delete old release assets to keep the repository clean.
+      - name: Delete old release assets
+        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{  env.PREV_VERSION_STR }}
+          deleteOnlyFromDrafts: false
       # Create and upload the stable release.
       - name: Create Stable GitHub Release
         uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: Nightly
+          tag: ${{ env.VERSION_STR }}
           file_glob: true
           file: _artifacts/**/*.vcvplugin
           overwrite: true
-          release_name: "Release ${{ github.ref_name }}"
+          release_name: "Release ${{ env.VERSION_STR }}"
+          draft: false
           prerelease: false
           make_latest: true
           body: ${{ steps.stable_release_notes.outputs.release_body }}
@@ -410,5 +418,7 @@ jobs:
           file: _artifacts/**/*.vcvplugin
           overwrite: true
           release_name: "Nightly Build - ${{ github.sha }}"
+          draft: false
           prerelease: true
+          make_latest: true
           body: ${{ steps.nightly_release_notes.outputs.release_body }}

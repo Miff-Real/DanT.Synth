@@ -82,6 +82,8 @@
 
 * **Creative Routing**: Experiment with the "`Operation Order`" `knob` to discover unexpected and interesting `sonic transformations`. The `order of operations` can drastically change the final `output`.
 
+![AOCR Order Matters](img/aocr-order-matters.png)
+
 ### Suggested Module Settings
 
 Here are a few examples of how to use `AOCR` for common `signal processing` tasks:

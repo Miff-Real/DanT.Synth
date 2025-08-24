@@ -1,14 +1,12 @@
 # AOCR
 
-![AOCR Front Panel](https://library.vcvrack.com/screenshots/200/DanT.Synth/AOCR.png)
-*Description: A full front panel shot of the AOCR module, clearly showing all controls and ports.*
+![AOCR Front Panel](img/aocr.png)
 
 `AOCR` (Attenuvert, Offset, Clip, Rectify) is a versatile signal processing module, allowing you to manipulate `audio` and `CV signals` in various ways. It features flexible `signal attenuversion`, `offset`, `clipping`, and `rectification`, with a unique ability to reorder the `processing chain`.
 
 ## Controls and Ports
 
-![AOCR Top Section](placeholder_aocr_top_section.png)
-*Description: A close-up shot of the top section of the AOCR module, focusing on the `Signal Input`, `Input Grid Light`, and `Order Knob`.*
+![AOCR Input Section](img/aocr-input.png)
 
 ### Signal Input
 
@@ -18,12 +16,13 @@
 
 ### Operation Order
 
+![AOCR Order Section](img/aocr-order.png)
+
 * **`Operation Order` Knob**: This `knob` selects the order in which the four main `operations` (`Attenuvert`, `Offset`, `Clip`, `Rectify`) are applied to the `signal`. There are `12` possible permutations. The display above the `knob` shows the current order as a sequence of `A`, `O`, `C`, `R` characters.
 
-![AOCR Attenuverter Section](placeholder_aocr_attenuverter_section.png)
-*Description: A close-up shot of the `Attenuverter section`, showing the `ATV knob`, `Attenuverter CV input`, and `ATV CV attenuverter trimpot`.*
-
 ### Attenuverter
+
+![AOCR Attenuverter Section](img/aocr-attenuvertor.png)
 
 * **`Signal Attenuverter` Knob**: `Attenuverts` the `input signal` from `-2x` to `+2x`. The `knob` features an `arc` around it that visually represents the `attenuversion amount`. The `portion` of the `arc` controlled by the `knob's physical position` is shown in `green` (or `red` for `negative values`), while the `portion` added by the `CV input` is shown in `yellow`.
 
@@ -31,10 +30,9 @@
 
 * **`Attenuverter CV attenuverter` Trimpot**: `Attenuverter` for the `Attenuverter CV input`, from `-2x` to `+2x`.
 
-![AOCR Offset Section](placeholder_aocr_offset_section.png)
-*Description: A close-up shot of the `Offset section`, showing the `OFS knob`, `Offset CV input`, and `OFS CV attenuverter trimpot`.*
-
 ### Offset
+
+![AOCR Offset Section](img/aocr-offset.png)
 
 * **`Signal Offset` Knob**: Adds a `DC offset` to the `signal`, from `-10V` to `+10V`. The `knob` features an `arc` around it that visually represents the `offset amount`. The `portion` of the `arc` controlled by the `knob's physical position` is shown in `green` (or `red` for `negative values`), while the `portion` added by the `CV input` is shown in `yellow`.
 
@@ -42,10 +40,9 @@
 
 * **`Offset CV attenuverter` Trimpot**: `Attenuverter` for the `Offset CV input`, from `-2x` to `+2x`.
 
-![AOCR Clipping and Rectification Section](placeholder_aocr_clipping_rectification_section.png)
-*Description: A close-up shot of the `Clipping` and `Rectification section`, showing the `Clip switch`, `Rectify Type switch`, and `Rectify switch`.*
-
 ### Clipping
+
+![AOCR Clipping Section](img/aocr-clipping.png)
 
 * **`Clipping` Switch**: Selects the `clipping level`.
 * **None**: No `clipping` applied.
@@ -53,6 +50,8 @@
 * **±5v**: Clips the `signal` at `-5V` and `+5V`.
 
 ### Rectification
+
+![AOCR Rectification Section](img/aocr-rectification.png)
 
 * **`Rectify` Switch** (`Switch`): Selects the `rectification type`.
 * **None**: No `rectification` applied.
@@ -64,6 +63,8 @@
 * **[-]**: `Negative rectification`
 
 ### Signal Output
+
+![AOCR Output Section](img/aocr-output.png)
 
 * **`[Poly] Signal output`**: `Polyphonic output` for the processed `signal`. The `output voltage` is the result of the `input signal` passing through the `attenuverter`, `offset`, `clipping`, and `rectification stages`, in the order specified by the `Operation Order knob`.
 
@@ -85,14 +86,12 @@
 
 Here are a few examples of how to use `AOCR` for common `signal processing` tasks:
 
-![AOCR Example Patch](placeholder_simple_attenuation_example_patch.png)
-
 * **Simple Attenuation/Amplification**:
   * Goal: Adjust the overall level of an `audio` or `CV signal`.
   * `Operation Order`: `AOCR` (or any order where `A` is first if you want to apply `attenuversion` before other effects).
   * `Signal Attenuverter`: Adjust to desired `attenuation` (e.g., `0.5x` for `half volume`) or `amplification` (e.g., `1.5x`).
 
-![AOCR Example Patch](placeholder_centring_example_patch.png)
+![AOCR Example Patch](img/aocr-att-patch.png)
 
 * **Centring a Bipolar `CV` to Unipolar**:
   * Goal: Convert a `±5V` `LFO` to a `0V` to `10V` `unipolar signal`.
@@ -102,7 +101,7 @@ Here are a few examples of how to use `AOCR` for common `signal processing` task
   * `Clipping`: `±10v` (to ensure it doesn't exceed `10V` if the input is slightly off).
   * Result: A `±5V` `signal` (`10V` peak-to-peak) shifted up by `5V` will range from `0V` to `10V`.
 
-![AOCR Example Patch](placeholder_wavefolding_example_patch.png)
+![AOCR Example Patch](img/aocr-bi2uni-patch.png)
 
 * **Aggressive Wave Folding/Distortion**:
   * Goal: Create harsh, `distorted timbres` from a `sine wave`.
@@ -112,6 +111,8 @@ Here are a few examples of how to use `AOCR` for common `signal processing` task
   * `Clipping`: `±5v` (for more aggressive `clipping`).
   * `Rectify`: `Full` or `Half`, experiment with `Rectify direction` `[+]` or `[-]`.
   * Result: Introduces significant `harmonics` and `non-linearities`. Listen for `aliasing artefacts` and adjust `input signal frequency` if needed.
+
+![AOCR Example Patch](img/aocr-fold-patch.png)
 
 ## Technical Specifications
 

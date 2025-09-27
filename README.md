@@ -53,3 +53,20 @@ pacman -S mingw-w64-x86_64-nanovg
 ```
 make test
 ```
+
+## License
+
+### Plugin
+
+The plugin is licensed under the [GNU General Public License v3.0 (or later)](LICENSE).
+
+### Graphics
+
+The graphics used in this plugin are original and are licensed under the [GNU General Public License v3.0 (or later)](LICENSE).
+
+### Fonts
+
+This plugin uses the following fonts:
+
+- **Courier Prime**: Licensed under the [SIL Open Font License, Version 1.1](LICENSE.CourierPrime-OFL).
+- **Material Symbols**: Licensed under the [Apache License 2.0](LICENSE.material-symbols).

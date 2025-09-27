@@ -12,6 +12,26 @@ A VCV Rack plugin by DanT.
 
 * [AOCR](docs/aocr.md) - `[5HP][Polyphonic]` Attenuverter & Offset & Clip & Rectify. Reorderable.
 
+## Building the plugin
+
+You will need to setup your environment as described by the VCV Rack documentation first:
+
+* https://vcvrack.com/manual/Building
+
+Once your environment is setup, download the right SDK for your OS from the same page, extract it next to the plugin directory so that it looks like so:
+
+```
+/
+├─ DanT.Synth/
+├─ Rack-SDK/
+```
+
+As per the VCV Rack documentation, if everything is correct you should be able to build the plugin in the `DanT.Synth` directory with:
+
+```
+make dist
+```
+
 ## Tests on Windows
 
 * In order ot run the tests in a Windows environment (MSys2 MinGW64) you will need to install `nanovg`

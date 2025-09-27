@@ -6,6 +6,7 @@
     "brand": "DanT",
     "author": "dtilley",
     "authorUrl": "https://www.youtube.com/@MiffReal",
+    "sourceUrl": "https://github.com/Miff-Real/DanT.Synth",
     "donateUrl": "https://ko-fi.com/dantsynth",
     "modules": [
         {

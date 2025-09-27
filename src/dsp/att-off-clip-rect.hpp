@@ -1,13 +1,8 @@
 #pragma once
 
-#include "../plugin.hpp"
+#include "../static.hpp"
 
 namespace DANT {
-static const rack::simd::float_4 R_ZERO{0.0f};
-static const rack::simd::float_4 M_TEN{-10.0f};
-static const rack::simd::float_4 P_TEN{10.0f};
-static const rack::simd::float_4 M_FIVE{-5.0f};
-static const rack::simd::float_4 P_FIVE{5.0f};
 
 /**
  * Clip (C) and Rectify (R) are universally commutative.

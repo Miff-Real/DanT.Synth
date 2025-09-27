@@ -62,7 +62,7 @@ The plugin is licensed under the [GNU General Public License v3.0 (or later)](LI
 
 ### Graphics
 
-The graphics used in this plugin are original and are licensed under the [GNU General Public License v3.0 (or later)](LICENSE).
+The graphics used in this plugin are original and are licensed under the [CC BY-NC-SA 4.0](LICENSE.graphics).
 
 ### Fonts
 

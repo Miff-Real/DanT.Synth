@@ -124,10 +124,10 @@ struct AocrModule : rack::engine::Module {
   /**
    * Called on autosave, store non-parameter module data.
    */
-  json_t *dataToJson() override {
+  json_t* dataToJson() override {
     DANT::saveUserSettings();
 
-    json_t *rootJ = json_object();
+    json_t* rootJ = json_object();
 
     return rootJ;
   }
@@ -135,12 +135,12 @@ struct AocrModule : rack::engine::Module {
   /**
    * Called when module is loaded, sets non-parameter module data.
    */
-  void dataFromJson(json_t *rootJ) override { DANT::loadUserSettings(); }
+  void dataFromJson(json_t* rootJ) override { DANT::loadUserSettings(); }
 
   /**
    * Called when a preset is loaded.
    */
-  void paramsFromJson(json_t *rootJ) override { rack::engine::Module::paramsFromJson(rootJ); }
+  void paramsFromJson(json_t* rootJ) override { rack::engine::Module::paramsFromJson(rootJ); }
 
   /**
    * Called when the application sample rate is changed.
@@ -150,7 +150,7 @@ struct AocrModule : rack::engine::Module {
   /**
    * Called on module randomise.
    */
-  void onRandomize(const RandomizeEvent &e) override {
+  void onRandomize(const RandomizeEvent& e) override {
     rack::engine::Module::onRandomize(e);  // randomise all parameters, manually implement non-paramtere randomisation.
   }
 
@@ -179,7 +179,7 @@ struct AocrModule : rack::engine::Module {
   /**
    * Called every sample, run DSP code.
    */
-  void process(const rack::engine::Module::ProcessArgs &args) override {
+  void process(const rack::engine::Module::ProcessArgs& args) override {
     inputSignalNumChannels = inputs[SGNL_INPUT].getChannels();
 
     DANT::AOCROpts processOptions;
@@ -316,11 +316,11 @@ struct AocrModule : rack::engine::Module {
  * Widgets: UI thread.
  */
 struct OpOrderWidget : rack::widget::TransparentWidget {
-  AocrModule *module;
+  AocrModule* module;
 
-  OpOrderWidget(AocrModule *m) { this->module = m; }
+  OpOrderWidget(AocrModule* m) { this->module = m; }
 
-  void draw(const rack::widget::Widget::DrawArgs &args) override {
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
     nvgSave(args.vg);
 
     NVGcolor opOrderBG{DANT::Colours::getTextColour()};
@@ -361,7 +361,7 @@ struct OpOrderWidget : rack::widget::TransparentWidget {
     nvgRestore(args.vg);
   }
 
-  void drawLayer(const rack::widget::Widget::DrawArgs &args, int layer) override {
+  void drawLayer(const rack::widget::Widget::DrawArgs& args, int layer) override {
     if (layer == 1) {
       nvgSave(args.vg);
 
@@ -555,36 +555,39 @@ struct OpOrderWidget : rack::widget::TransparentWidget {
   }
 };
 
+const std::string INPUT_CIRCLE{"\uf71a"};
+const std::string OUTPUT_CIRCLE{"\uf70e"};
+
 struct AocrWidget : DANT::ModuleWidget {
   /**
    * Component widgets.
    */
-  DANT::Port *testInputPort;
-  DANT::GridLight *signalInGridLight;
-  DANT::Knob *orderKnob;
-  DANT::Knob *attenuverterKnob;
-  DANT::Port *attenuverterCvInput;
-  DANT::Trimpot *attenuverterCvTrimpot;
-  DANT::Knob *offsetKnob;
-  DANT::Port *offsetCvInput;
-  DANT::Trimpot *offsetCvTrimpot;
-  rack::componentlibrary::CKSSThree *clipSwitch;
-  rack::componentlibrary::CKSS *rectifyTypeSwitch;
-  rack::componentlibrary::CKSSThree *rectifySwitch;
-  DANT::GridLight *signalOutGridLight;
-  DANT::Port *testOutputPort;
+  DANT::Port* testInputPort;
+  DANT::GridLight* signalInGridLight;
+  DANT::Knob* orderKnob;
+  DANT::Knob* attenuverterKnob;
+  DANT::Port* attenuverterCvInput;
+  DANT::Trimpot* attenuverterCvTrimpot;
+  DANT::Knob* offsetKnob;
+  DANT::Port* offsetCvInput;
+  DANT::Trimpot* offsetCvTrimpot;
+  rack::componentlibrary::CKSSThree* clipSwitch;
+  rack::componentlibrary::CKSS* rectifyTypeSwitch;
+  rack::componentlibrary::CKSSThree* rectifySwitch;
+  DANT::GridLight* signalOutGridLight;
+  DANT::Port* testOutputPort;
 
   /**
    * Widget constructor.
    */
-  AocrWidget(AocrModule *module) {
+  AocrWidget(AocrModule* module) {
     rack::app::ModuleWidget::setModule(module);
 
     this->box.size = rack::math::Vec(rack::app::RACK_GRID_WIDTH * HP, rack::app::RACK_GRID_HEIGHT);
 
     // sub-widgets
     {
-      OpOrderWidget *orderDisplay = new OpOrderWidget(module);
+      OpOrderWidget* orderDisplay = new OpOrderWidget(module);
       orderDisplay->setPosition(DANT::layout(1.0f, 2.75f));
       orderDisplay->setSize(DANT::layout(4.5f, 2.0f));
       addChild(orderDisplay);
@@ -665,7 +668,7 @@ struct AocrWidget : DANT::ModuleWidget {
   // used by the common code to draw the module title
   std::string moduleName() override { return "AOCR"; }
 
-  void draw(const rack::widget::Widget::DrawArgs &args) override {
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
     DANT::ModuleWidget::draw(args);  // call common draw method for panel first
 
     // now draw on top of the panel
@@ -676,12 +679,12 @@ struct AocrWidget : DANT::ModuleWidget {
     opts.xpos = DANT::layout(1.5f, 2.0f).x;
     opts.ypos = DANT::layout(1.5f, 2.0f).y;
     // input icon
-    DANT::Fonts::drawSymbols(args, {"input_circle"}, opts);
+    DANT::Fonts::drawSymbols(args, INPUT_CIRCLE, opts);
 
     opts.xpos = DANT::layout(4.5f, 15.0f).x;
     opts.ypos = DANT::layout(4.5f, 15.0f).y;
     // output icon
-    DANT::Fonts::drawSymbols(args, {"output_circle"}, opts);
+    DANT::Fonts::drawSymbols(args, OUTPUT_CIRCLE, opts);
 
     // text settings
     opts.size = 10.0f;
@@ -723,4 +726,4 @@ struct AocrWidget : DANT::ModuleWidget {
 /**
  * Create model and register with the plugin.
  */
-rack::plugin::Model *modelAocr = rack::createModel<AocrModule, AocrWidget>("AOCR");
+rack::plugin::Model* modelAocr = rack::createModel<AocrModule, AocrWidget>("AOCR");

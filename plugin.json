@@ -16,9 +16,9 @@
       "name": "AOCR",
       "description": "[5HP][Polyphonic] Attenuverter & Offset & Clip & Rectify. Reorderable.",
       "tags": [
-        “Attenuator”,
-        “Polyphonic”,
-        “Utility”
+        "Attenuator",
+        "Polyphonic",
+        "Utility"
       ],
       "keywords": "attenuverter invert offset clip clipping rectify rectification order reorderable",
       "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/aocr.md"

@@ -33,7 +33,7 @@ jobs:
   # Check if the 'version' property in plugin.json has changed.
   check-version-change:
     # This job runs on any push event. Its logic will determine if a relevant version change occurred.
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     name: Check Plugin Version Change
     runs-on: ubuntu-24.04
     outputs:
@@ -47,11 +47,19 @@ jobs:
           fetch-depth: 2
       # Configure Git to trust the repository directory for operations.
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # Step to compare plugin.json versions and set an output.
       - name: Compare plugin.json versions
         id: version_check # ID for this step to reference its outputs.
         run: |
+          # If the workflow was manually dispatched, we can skip the version check
+          # and force the build.
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Workflow was manually dispatched. Forcing build."
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           PREVIOUS_VERSION=""
           CURRENT_VERSION=""
           # Get the version from plugin.json in the current commit (HEAD).
@@ -202,7 +210,7 @@ jobs:
           submodules: recursive
       # Configure Git to trust the repository directory for operations within the container.
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # This step appends the commit hash to the version in plugin.json.
       - name: Update version for nightly build
         run: |
@@ -253,7 +261,7 @@ jobs:
           submodules: recursive
       # Configure Git to trust the repository directory for operations within the runner.
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Update version for nightly build
         run: |
           current_version=$(jq -r .version plugin.json)
@@ -310,7 +318,7 @@ jobs:
           fetch-depth: 0
       # Configure Git to trust the repository directory for operations.
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # Get the version from plugin.json and prepend 'v' to use in the tag name.
       - name: Get version
         id: get_version
@@ -375,7 +383,7 @@ jobs:
           fetch-depth: 0
       # Configure Git to trust the repository directory for operations.
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/DanT.Synth/DanT.Synth
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       # Download all nightly build artifacts.
       - name: Download nightly build artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

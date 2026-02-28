@@ -555,9 +555,6 @@ struct OpOrderWidget : rack::widget::TransparentWidget {
   }
 };
 
-const std::string INPUT_CIRCLE{"\uf71a"};
-const std::string OUTPUT_CIRCLE{"\uf70e"};
-
 struct AocrWidget : DANT::ModuleWidget {
   /**
    * Component widgets.
@@ -679,12 +676,12 @@ struct AocrWidget : DANT::ModuleWidget {
     opts.xpos = DANT::layout(1.5f, 2.0f).x;
     opts.ypos = DANT::layout(1.5f, 2.0f).y;
     // input icon
-    DANT::Fonts::drawSymbols(args, INPUT_CIRCLE, opts);
+    DANT::Fonts::drawSymbols(args, DANT::INPUT_CIRCLE, opts);
 
     opts.xpos = DANT::layout(4.5f, 15.0f).x;
     opts.ypos = DANT::layout(4.5f, 15.0f).y;
     // output icon
-    DANT::Fonts::drawSymbols(args, OUTPUT_CIRCLE, opts);
+    DANT::Fonts::drawSymbols(args, DANT::OUTPUT_CIRCLE, opts);
 
     // text settings
     opts.size = 10.0f;

@@ -22,6 +22,14 @@
       ],
       "keywords": "attenuverter invert offset clip clipping rectify rectification order reorderable",
       "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/aocr.md"
+    },
+    {
+      "slug": "Bend",
+      "name": "Bend",
+      "description": "[8HP][Polyphonic] Pitch modulator that creates note bends similar to guitar techniques.",
+      "tags": [],
+      "keywords": "",
+      "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/bend.md"
     }
   ]
 }

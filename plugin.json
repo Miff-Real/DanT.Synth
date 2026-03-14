@@ -26,9 +26,14 @@
     {
       "slug": "Bend",
       "name": "Bend",
-      "description": "[8HP][Polyphonic] Pitch modulator that creates note bends similar to guitar techniques.",
-      "tags": [],
-      "keywords": "",
+      "description": "[8HP][Polyphonic] CV processor that produces programmable portamento, glides, envelopes, and pitch bends.",
+      "tags": [
+        "Function generator",
+        "Polyphonic",
+        "Sample and hold",
+        "Utility"
+      ],
+      "keywords": "bend slide portamento glide",
       "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/bend.md"
     }
   ]

@@ -15,7 +15,7 @@ struct Port : rack::app::SvgPort {
     this->shadow->opacity = 0.0f;
   }
 
-  void draw(const rack::widget::Widget::DrawArgs &args) override {
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
     if (this->isOutput) {
       drawOutputBG(args);
     }
@@ -23,7 +23,7 @@ struct Port : rack::app::SvgPort {
     rack::app::SvgPort::draw(args);
   }
 
-  void drawOutputBG(const rack::widget::Widget::DrawArgs &args) {
+  void drawOutputBG(const rack::widget::Widget::DrawArgs& args) {
     nvgSave(args.vg);
 
     nvgStrokeWidth(args.vg, PORT_CIRCLE_STROKE);

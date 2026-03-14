@@ -20,7 +20,7 @@ const std::vector<std::string> logoSymbol = {"headphones"};
  * Respects rack dark panel setting.
  */
 template <typename W>
-void drawPanel(const rack::widget::Widget::DrawArgs &args, W *widget) {
+void drawPanel(const rack::widget::Widget::DrawArgs& args, W* widget) {
   nvgSave(args.vg);
 
   nvgFillColor(args.vg, DANT::Colours::getPanelBorderColour());

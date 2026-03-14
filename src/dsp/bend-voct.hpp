@@ -20,7 +20,6 @@ struct BendOpts {
 };
 
 inline rack::simd::float_4 bendVoct(const rack::simd::float_4 inSignals, BendOpts opts) {
-  // Clamp progress between 0 and 1
   rack::simd::float_4 p = rack::simd::clamp(opts.progress, 0.0f, 1.0f);
 
   // Exponent derived from shape: pow(2, shape * 2.0)
@@ -29,7 +28,6 @@ inline rack::simd::float_4 bendVoct(const rack::simd::float_4 inSignals, BendOpt
   // shape = 1 (exp) -> exp = 4.0
   rack::simd::float_4 exponents = rack::dsp::exp2_taylor5(opts.shape * 2.0f);
 
-  // Apply curve to progress
   rack::simd::float_4 curved = rack::simd::ifelse(p > 0.0f, rack::simd::pow(p, exponents), 0.0f);
 
   if (opts.inverseUnbend) {
@@ -42,7 +40,6 @@ inline rack::simd::float_4 bendVoct(const rack::simd::float_4 inSignals, BendOpt
     curved = rack::simd::ifelse(opts.isUnbending != 0.0f, unbendCurve, curved);
   }
 
-  // Interpolate offset
   rack::simd::float_4 offsets = opts.startOffsets + (opts.targetOffsets - opts.startOffsets) * curved;
 
   return inSignals + offsets;

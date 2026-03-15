@@ -9,7 +9,7 @@ static const float KNOB_TO_ARC_SPACING{4.0f};
 static const float KNOB_NOTCH_WIDTH{1.5f};
 static const float KNOB_ARC_WIDTH{2.5f};
 
-static NVGpaint knobTexture(const rack::widget::Widget::DrawArgs &args, const float width, const float height) {
+static NVGpaint knobTexture(const rack::widget::Widget::DrawArgs& args, const float width, const float height) {
   std::shared_ptr<rack::window::Image> metalGradTex =
       APP->window->loadImage(rack::asset::plugin(pluginInstance, "res/metal-grad.png"));
   return nvgImagePattern(args.vg, 0.0f, 0.0f, width, height, 0.0f, metalGradTex->handle, 1.0f);
@@ -68,7 +68,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
   float getParamValue(const bool bip = false) {
     if (this->module) {
       float v{this->module->params[this->paramId].getValue()};
-      rack::engine::ParamQuantity *pq{this->module->getParamQuantity(this->paramId)};
+      rack::engine::ParamQuantity* pq{this->module->getParamQuantity(this->paramId)};
       return rack::math::rescale(v, pq->getMinValue(), pq->getMaxValue(), bip ? -1.0f : 0.0f, 1.0f);
     }
     return bip ? 0.0f : 0.5f;
@@ -91,7 +91,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     return 1.0f;
   }
 
-  void draw(const rack::widget::Widget::DrawArgs &args) override {
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
     nvgSave(args.vg);
 
     drawKnobBG(args);
@@ -117,7 +117,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     rack::componentlibrary::RoundKnob::draw(args);
   }
 
-  void drawLayer(const rack::widget::Widget::DrawArgs &args, int layer) override {
+  void drawLayer(const rack::widget::Widget::DrawArgs& args, int layer) override {
     if (layer == 1) {
       if (this->vizType != NONE) {
         nvgSave(args.vg);
@@ -139,7 +139,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     rack::componentlibrary::RoundKnob::drawLayer(args, layer);
   }
 
-  void drawKnobBG(const rack::widget::Widget::DrawArgs &args) {
+  void drawKnobBG(const rack::widget::Widget::DrawArgs& args) {
     nvgFillPaint(args.vg, knobTexture(args, this->arcData.knobWidth, this->arcData.knobHeight));
 
     nvgBeginPath(args.vg);
@@ -147,7 +147,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     nvgFill(args.vg);
   }
 
-  void drawNotchesViz(const rack::widget::Widget::DrawArgs &args) {
+  void drawNotchesViz(const rack::widget::Widget::DrawArgs& args) {
     nvgStrokeWidth(args.vg, KNOB_NOTCH_WIDTH);
     nvgStrokeColor(args.vg, DANT::Colours::getTextColour());
 
@@ -159,7 +159,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     drawNotches(args);
   }
 
-  void drawArcViz(const rack::widget::Widget::DrawArgs &args) {
+  void drawArcViz(const rack::widget::Widget::DrawArgs& args) {
     nvgStrokeWidth(args.vg, KNOB_ARC_WIDTH);
     NVGcolor arcColour = DANT::Colours::getTextColour();
     arcColour.a = 0.8f;
@@ -173,7 +173,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     drawNotches(args);
   }
 
-  void drawNotches(const rack::widget::Widget::DrawArgs &args) {
+  void drawNotches(const rack::widget::Widget::DrawArgs& args) {
     if (this->numNotches < 2) {
       return;
     }
@@ -197,7 +197,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     }
   }
 
-  void drawArcUniValue(const rack::widget::Widget::DrawArgs &args) {
+  void drawArcUniValue(const rack::widget::Widget::DrawArgs& args) {
     float paramExtentDeg{
         rack::math::clampSafe(this->arcData.leftExtentDeg + (this->arcData.rangeDeg * this->getParamValue()),
                               this->arcData.leftExtentDeg, this->arcData.rightExtentDeg)};
@@ -225,7 +225,7 @@ struct Knob : rack::componentlibrary::RoundKnob {
     }
   }
 
-  void drawArcBipValue(const rack::widget::Widget::DrawArgs &args) {
+  void drawArcBipValue(const rack::widget::Widget::DrawArgs& args) {
     const bool bip{true};
     float pv{this->getParamValue(bip)};
     bool paramIsNegative{pv < 0.0f};

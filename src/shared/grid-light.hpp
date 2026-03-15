@@ -9,8 +9,8 @@ static const float GRID_CELL{2.0f};
 static const float GRID_SPACING{1.0f};
 
 struct GridLight : rack::widget::SvgWidget {
-  const int *numChannels{nullptr};
-  const rack::simd::float_4 *channelValues{nullptr};  // pointer to array of simd floats
+  const int* numChannels{nullptr};
+  const rack::simd::float_4* channelValues{nullptr};  // pointer to array of simd floats
 
   float minChannelValue{-5.0f};  // full intensity negative light at this value
   float maxChannelValue{5.0f};   // full intensity positive light at this value
@@ -56,7 +56,7 @@ struct GridLight : rack::widget::SvgWidget {
     }
   }
 
-  void draw(const rack::widget::Widget::DrawArgs &args) override {
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
     rack::widget::SvgWidget::draw(args);
     const bool placeholders{true};
     nvgSave(args.vg);
@@ -64,7 +64,7 @@ struct GridLight : rack::widget::SvgWidget {
     nvgRestore(args.vg);
   }
 
-  void drawLayer(const rack::widget::Widget::DrawArgs &args, int layer) override {
+  void drawLayer(const rack::widget::Widget::DrawArgs& args, int layer) override {
     if (layer == 1) {
       nvgSave(args.vg);
       channelLoop(args);
@@ -72,18 +72,21 @@ struct GridLight : rack::widget::SvgWidget {
     }
   }
 
-  void channelLoop(const rack::widget::Widget::DrawArgs &args, const bool placeholders = false) {
+  void channelLoop(const rack::widget::Widget::DrawArgs& args, const bool placeholders = false) {
     int channel{0};
-    NVGcolor colour{DANT::RGB_UNLIT};
     for (int x{0}; x < DANT::SIMD; ++x) {
       for (int y{0}; y < DANT::SIMD; ++y) {
         channel = (x * DANT::SIMD) + (y + 1);
         if (channel <= getNumChannels()) {
+          NVGcolor colour{DANT::RGB_UNLIT};
           if (!placeholders) {
             float chanValue{getChannelValue(channel - 1)};
             if (chanValue != 0.0f) {
               colour = chanValue < 0.0f ? this->negativeColour : this->positiveColour;
               colour.a = chanValue < 0.0f ? (chanValue / this->minChannelValue) : (chanValue / this->maxChannelValue);
+            } else {
+              // Properly zeroes out alpha for empty lanes overlaid on placeholders
+              colour.a = 0.0f;
             }
           }
           drawChanSquare(args,
@@ -95,7 +98,7 @@ struct GridLight : rack::widget::SvgWidget {
     }
   }
 
-  void drawChanSquare(const rack::widget::Widget::DrawArgs &args, const rack::math::Vec pos, const NVGcolor colour) {
+  void drawChanSquare(const rack::widget::Widget::DrawArgs& args, const rack::math::Vec pos, const NVGcolor colour) {
     nvgFillColor(args.vg, colour);
 
     nvgBeginPath(args.vg);

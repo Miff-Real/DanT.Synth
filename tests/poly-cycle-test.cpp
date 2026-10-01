@@ -559,4 +559,182 @@ TEST_CASE("poly-cycle.hpp::PolyCycle") {
     settle(cycle, 2.0f, GATE_LOW, opts);
     CHECK(cycle.active == before + 1);
   }
+
+  SECTION("sample and hold: the value is taken when a note starts and then held") {
+    DANT::PolyCycleOpts opts{make_opts(3)};
+    opts.sampleAndHold = true;
+    step(cycle, 1.0f, NO_TRIG, NO_RESET, opts);  // nothing sampled before the first note
+    CHECK(cycle.outs[0] == 0.0f);
+    step(cycle, 1.0f, TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    step(cycle, 1.5f, NO_TRIG, NO_RESET, opts);  // the input moves on, the channel does not follow
+    CHECK(cycle.outs[0] == 1.0f);
+    step(cycle, 2.0f, TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+    step(cycle, 2.5f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[1] == 2.0f);
+  }
+
+  SECTION("sample and hold: a channel falls to zero when the signal moves on, in zero mode") {
+    DANT::PolyCycleOpts opts{make_opts(3, DANT::IDLE_ZERO)};
+    opts.sampleAndHold = true;
+    step(cycle, 1.0f, TRIG, NO_RESET, opts);
+    step(cycle, 1.5f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    step(cycle, 2.0f, TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 0.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+  }
+
+  SECTION("sample and hold: the sample is taken from the delayed signal") {
+    DANT::PolyCycleOpts opts{make_opts(2, DANT::IDLE_HOLD, 2)};
+    opts.sampleAndHold = true;
+    step(cycle, 1.0f, NO_TRIG, NO_RESET, opts);
+    step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+    step(cycle, 3.0f, TRIG, NO_RESET, opts);  // the value from two samples ago is what has reached the output
+    CHECK(cycle.outs[0] == 1.0f);
+  }
+
+  SECTION("sample and hold: a jump samples the new value when advancing on change") {
+    DANT::PolyCycleOpts opts{make_change_opts(3)};
+    opts.sampleAndHold = true;
+    step(cycle, 1.0f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+  }
+
+  SECTION("sample and hold: a trigger ahead of its signal still ends up holding the new value") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.sampleAndHold = true;
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+
+    // first note, before the gap has been measured: the old value is sampled, then replaced when the step arrives
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 0.0f);
+    cycle.step(0.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    cycle.step(1.3f, GATE_HIGH, NO_TRIG, NO_RESET, opts);  // later movement is not followed
+    CHECK(cycle.outs[0] == 1.0f);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+
+    // second note, now corrected: the new channel goes straight to the new value
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[1] == 0.0f);
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+  }
+
+  SECTION("reset clears: every channel of both outputs is zero until the next note") {
+    DANT::PolyCycleOpts opts{make_opts(3)};
+    opts.resetClears = true;
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    cycle.step(2.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 2.0f, GATE_HIGH, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+    CHECK(cycle.gateOuts[1] == GATE_HIGH);
+
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, RESET, opts);  // the gate is still held when the reset arrives
+    CHECK(cycle.active == 0);
+    for (int c{0}; c < 3; ++c) {
+      CHECK(cycle.outs[c] == 0.0f);
+      CHECK(cycle.gateOuts[c] == GATE_LOW);
+    }
+    settle(cycle, 2.0f, GATE_HIGH, opts);  // the input is still there, nothing is sent
+    CHECK(cycle.outs[0] == 0.0f);
+    CHECK(cycle.gateOuts[0] == GATE_LOW);
+    settle(cycle, 2.0f, GATE_LOW, opts);
+
+    cycle.step(3.0f, GATE_HIGH, TRIG, NO_RESET, opts);  // the next note plays on the first channel
+    CHECK(cycle.active == 0);
+    CHECK(cycle.outs[0] == 3.0f);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    CHECK(cycle.outs[1] == 0.0f);
+  }
+
+  SECTION("reset clears: running pulses are stopped") {
+    DANT::PolyCycleOpts opts{make_opts(3)};
+    opts.resetClears = true;
+    opts.gateMode = DANT::GATE_PULSE;
+    opts.gateSamples = 1000;
+    step(cycle, 1.0f, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    step(cycle, 2.0f, TRIG, NO_RESET, opts);
+    settle(cycle, 2.0f, GATE_LOW, opts);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    CHECK(cycle.gateOuts[1] == GATE_HIGH);
+    step(cycle, 2.0f, NO_TRIG, RESET, opts);
+    CHECK(cycle.gateOuts[0] == GATE_LOW);
+    CHECK(cycle.gateOuts[1] == GATE_LOW);
+  }
+
+  SECTION("reset clears: a reset arriving with or just after its trigger keeps that note") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.resetClears = true;
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    cycle.step(2.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 2.0f, GATE_LOW, opts);
+
+    cycle.step(3.0f, GATE_HIGH, TRIG, RESET, opts);  // together
+    CHECK(cycle.active == 0);
+    CHECK(cycle.outs[0] == 3.0f);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    CHECK(cycle.outs[1] == 0.0f);
+    settle(cycle, 3.0f, GATE_LOW, opts);
+    cycle.step(4.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    settle(cycle, 4.0f, GATE_LOW, opts);
+
+    cycle.step(5.0f, GATE_HIGH, TRIG, NO_RESET, opts);  // trigger first
+    CHECK(cycle.active == 2);
+    cycle.step(5.0f, GATE_HIGH, NO_TRIG, RESET, opts);
+    CHECK(cycle.active == 0);
+    CHECK(cycle.outs[0] == 5.0f);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    CHECK(cycle.outs[1] == 0.0f);
+    CHECK(cycle.outs[2] == 0.0f);
+    settle(cycle, 5.0f, GATE_LOW, opts);
+    cycle.step(6.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+  }
+
+  SECTION("reset clears with sample and hold: the note that came with the reset keeps its sample") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.resetClears = true;
+    opts.sampleAndHold = true;
+    step(cycle, 1.0f, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    step(cycle, 2.0f, TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[1] == 2.0f);
+    step(cycle, 2.4f, NO_TRIG, RESET, opts);  // reset one sample late, the input has already moved
+    CHECK(cycle.active == 0);
+    CHECK(cycle.outs[0] == 2.0f);
+    CHECK(cycle.outs[1] == 0.0f);
+  }
+
+  SECTION("without reset clears a reset leaves the held values alone") {
+    const DANT::PolyCycleOpts opts{make_opts(3)};
+    step(cycle, 1.0f, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    step(cycle, 2.0f, TRIG, NO_RESET, opts);
+    settle(cycle, 2.0f, GATE_LOW, opts);
+    step(cycle, 2.0f, NO_TRIG, RESET, opts);
+    CHECK(cycle.active == 0);
+    CHECK(cycle.outs[0] == 2.0f);  // the first channel follows the input straight away
+    CHECK(cycle.outs[1] == 2.0f);
+  }
 }

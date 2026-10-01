@@ -59,6 +59,8 @@ struct PcyclModule : rack::engine::Module {
 
   DANT::PolyCycle cycle;
   DANT::IDLE_MODE idleMode{DANT::IDLE_HOLD};
+  bool sampleAndHold{false};
+  bool resetClears{true};
   bool autoAlign{true};
   float manualDelay{0.0f};  // samples, a float so that the menu slider can write to it
   bool advanceOnChange{false};
@@ -113,6 +115,8 @@ struct PcyclModule : rack::engine::Module {
 
     json_t* rootJ = json_object();
     json_object_set_new(rootJ, "idleMode", json_integer(static_cast<int>(idleMode)));
+    json_object_set_new(rootJ, "sampleAndHold", json_boolean(sampleAndHold));
+    json_object_set_new(rootJ, "resetClears", json_boolean(resetClears));
     json_object_set_new(rootJ, "autoAlign", json_boolean(autoAlign));
     json_object_set_new(rootJ, "signalDelay", json_integer(readManualDelay()));
     json_object_set_new(rootJ, "advanceOnChange", json_boolean(advanceOnChange));
@@ -131,6 +135,12 @@ struct PcyclModule : rack::engine::Module {
 
     if (json_t* j = json_object_get(rootJ, "idleMode")) {
       idleMode = json_integer_value(j) == DANT::IDLE_ZERO ? DANT::IDLE_ZERO : DANT::IDLE_HOLD;
+    }
+    if (json_t* j = json_object_get(rootJ, "sampleAndHold")) {
+      sampleAndHold = json_boolean_value(j);
+    }
+    if (json_t* j = json_object_get(rootJ, "resetClears")) {
+      resetClears = json_boolean_value(j);
     }
     if (json_t* j = json_object_get(rootJ, "autoAlign")) {
       autoAlign = json_boolean_value(j);
@@ -162,6 +172,8 @@ struct PcyclModule : rack::engine::Module {
   void onReset() override {
     softReset();
     idleMode = DANT::IDLE_HOLD;
+    sampleAndHold = false;
+    resetClears = true;
     autoAlign = true;
     manualDelay = 0.0f;
     advanceOnChange = false;
@@ -196,6 +208,8 @@ struct PcyclModule : rack::engine::Module {
     DANT::PolyCycleOpts processOptions;
     processOptions.channels = readChannels();
     processOptions.idleMode = idleMode;
+    processOptions.sampleAndHold = sampleAndHold;
+    processOptions.resetClears = resetClears;
     processOptions.autoAlign = autoAlign;
     processOptions.delaySamples = readManualDelay();
     processOptions.advanceOnChange = advanceOnChange;
@@ -428,6 +442,8 @@ struct PcyclWidget : DANT::ModuleWidget {
     menu->addChild(rack::createIndexSubmenuItem(
         "Idle channels", {"Hold last value", "Zero volts"}, [=]() { return static_cast<size_t>(module->idleMode); },
         [=](size_t mode) { module->idleMode = mode == 1 ? DANT::IDLE_ZERO : DANT::IDLE_HOLD; }));
+    menu->addChild(rack::createBoolPtrMenuItem("Sample and hold", "", &module->sampleAndHold));
+    menu->addChild(rack::createBoolPtrMenuItem("Reset clears outputs", "", &module->resetClears));
     menu->addChild(rack::createSubmenuItem("Timing correction", "", [=](rack::ui::Menu* menu) {
       menu->addChild(rack::createBoolPtrMenuItem("Automatic", "", &module->autoAlign));
       if (module->autoAlign) {

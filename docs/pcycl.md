@@ -30,7 +30,8 @@ Each icon on the panel sits above the port it describes.
 ### Reset
 
 * **`Reset` Button** and **`Reset trigger input`**: Returns the signal to the first channel. The next trigger stays on
-  the first channel, so the first note after a reset always plays there.
+  the first channel, so the first note after a reset always plays there. By default a reset also sets every channel
+  of both outputs to `0V` until that note starts, see `Reset clears outputs` below.
 
 ### Channels
 
@@ -55,6 +56,15 @@ When the module is bypassed both inputs are passed to their outputs unchanged, a
   * `Hold last value` (default): Each channel keeps the last value it received. Use this for pitch, so that a note
     which is still releasing stays in tune.
   * `Zero volts`: The channels fall to `0V`.
+
+* **Sample and hold** (default off): When enabled, the selected channel no longer follows the input. Instead the
+  signal is sampled once, at the moment a note starts, and the channel holds that value. What happens to the value
+  when the signal moves on to the next channel is still set by `Idle channels`. The sample is taken after any
+  `Timing correction` delay, so it is the value that belongs to the trigger.
+
+* **Reset clears outputs** (default on): When enabled, a reset sets every channel of both outputs to `0V`, and
+  nothing is sent until the next note starts on the first channel. When disabled, a reset only returns the signal to
+  the first channel and the other channels keep their values.
 
 * **Timing correction**: Lines up the signal and its trigger when they do not arrive together. See `Timing` below.
   * `Automatic` (default on): The module measures how far apart the two arrive and delays the earlier one to match.

@@ -28,6 +28,8 @@ enum GATE_MODE { GATE_PASS, GATE_OFF, GATE_PULSE };
 struct PolyCycleOpts {
   int channels{1};                      // number of output channels to cycle through
   IDLE_MODE idleMode{IDLE_HOLD};        // what the channels that are not receiving the signal output
+  bool sampleAndHold{false};            // take one sample when a note starts instead of following the signal
+  bool resetClears{false};              // a reset also sets every channel of both outputs to zero
   bool autoAlign{false};                // measure how far apart the signal and its trigger arrive, and correct it
   int delaySamples{0};                  // fixed signal delay, used when autoAlign is off
   bool advanceOnChange{false};          // also advance when the signal jumps
@@ -55,6 +57,8 @@ struct PolyCycle {
   // The next advance keeps the active channel, so the first note after start up or a reset lands on the first
   // channel.
   bool armed{true};
+  // Set by a reset that clears the outputs, nothing is sent until the next note starts.
+  bool muted{false};
 
   float history[POLY_CYCLE_HISTORY]{};
   float trigHistory[POLY_CYCLE_HISTORY]{};
@@ -70,6 +74,7 @@ struct PolyCycle {
   int stepAge{POLY_CYCLE_LONG_AGO};  // samples since a step that has not yet been matched to a trigger
   int edgeAge{POLY_CYCLE_LONG_AGO};  // samples since a trigger that has not yet been matched to a step
   int skew{0};                       // samples the trigger arrives before the signal, negative if it arrives after
+  bool lateStep{false};              // this sample's step belongs to a trigger that has already been acted on
 
   // Follows slow movement of the signal, so that only a jump away from it counts as a change.
   float reference{0.0f};
@@ -102,8 +107,10 @@ struct PolyCycle {
     stepAge = POLY_CYCLE_LONG_AGO;
     edgeAge = POLY_CYCLE_LONG_AGO;
     skew = 0;
+    lateStep = false;
     active = 0;
     armed = true;
+    muted = false;
     reference = 0.0f;
     samplesSinceAdvance = POLY_CYCLE_LONG_AGO;
     lastSource = SOURCE_NONE;
@@ -126,6 +133,7 @@ struct PolyCycle {
 
     int signalDelay{std::min(std::max(opts.delaySamples, 0), POLY_CYCLE_MAX_DELAY)};
     int trigDelay{0};
+    lateStep = false;
     if (opts.autoAlign) {
       measureSkew(rawSignal, rawTrigger, window);
       signalDelay = std::max(-skew, 0);
@@ -173,15 +181,29 @@ struct PolyCycle {
     noteStarted = false;
 
     if (resetTrigger) {
+      // A note that started just before the reset belongs to it, and moves to the first channel with it.
+      const float noteValue{outs[active]};
+      const int notePulse{gateRemaining[active]};
       if (recentAdvance && undoChannel > 0 && undoChannel < channels) {
         outs[undoChannel] = undoValue;
-        gateRemaining[0] = gateRemaining[undoChannel];
         gateRemaining[undoChannel] = 0;
       }
       leave(opts.idleMode);
       active = 0;
       armed = !recentAdvance;
       undoChannel = -1;
+      if (opts.resetClears) {
+        std::fill(outs, outs + DANT::CHANS, 0.0f);
+        std::fill(gateRemaining, gateRemaining + DANT::CHANS, 0);
+        std::fill(gapRemaining, gapRemaining + DANT::CHANS, 0);
+        muted = armed;
+      }
+      if (recentAdvance) {
+        gateRemaining[0] = notePulse;
+        if (opts.sampleAndHold) {
+          outs[0] = noteValue;
+        }
+      }
     }
 
     if (trigger) {
@@ -205,9 +227,21 @@ struct PolyCycle {
       lastIdleMode = opts.idleMode;
     }
 
+    if (noteStarted) {
+      muted = false;
+    }
+
     // The outputs are written after any channel change, so a new value that arrives on the same sample as its trigger
     // is only ever seen by the new channel.
-    outs[active] = signal;
+    if (opts.sampleAndHold) {
+      // A trigger that arrived ahead of its signal has sampled the old value. Until the timing correction has that
+      // gap measured it cannot prevent this, so the sample is taken again when the step it was waiting for arrives.
+      if (noteStarted || (lateStep && !muted)) {
+        outs[active] = signal;
+      }
+    } else if (!muted) {
+      outs[active] = signal;
+    }
     writeGates(trigVoltage, channels, opts);
   }
 
@@ -252,6 +286,7 @@ struct PolyCycle {
       }
     } else if (stepped) {
       if (edgeAge < POLY_CYCLE_LONG_AGO) {
+        lateStep = edgeAge > lastTrigDelay;
         skew = edgeAge;
         edgeAge = POLY_CYCLE_LONG_AGO;
       } else {
@@ -283,7 +318,7 @@ struct PolyCycle {
         // Pulses run their full length on the channel they started on, so the voices overlap.
         gateOuts[c] = POLY_CYCLE_GATE_HIGH;
         --gateRemaining[c];
-      } else if (opts.gateMode == GATE_PASS && c == active) {
+      } else if (opts.gateMode == GATE_PASS && c == active && !muted) {
         // A gate left high on an idle channel would hold its voice open, so only the active channel carries it.
         gateOuts[c] = trigVoltage;
       } else {

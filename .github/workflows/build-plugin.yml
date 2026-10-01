@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  RACK_SDK_VERSION: 2.6.3
+  RACK_SDK_VERSION: 2.6.6
   RACK_TOOLCHAIN_DIR: /home/build/rack-plugin-toolchain
   NIGHTLY_TAG: Nightly
 
@@ -104,8 +104,8 @@ jobs:
     permissions:
       contents: read
     container:
-      # rack-sdk-2.6.3
-      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux@sha256:d2be3be862cbf52fee0c9519baf66b7628ad95e836fd920ad971aceaaf6b9ddf
+      # rack-sdk-2.6.6
+      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux@sha256:d49eaf94ea3f1e29f547d920cc5a50ff8339f45398017d1ea7c1a79fa1dbc25f
       # The checkout is owned by root, and the toolchain builds inside it.
       options: --user root
     strategy:
@@ -157,10 +157,10 @@ jobs:
         include:
           - platform: mac-arm64
             target: arm64-apple-darwin
-            sdk-sha256: a256d7f8c97c004419db4bef5a5f461c250c4ad2d877ab2e4454ecefd1a847cf
+            sdk-sha256: 29414e52417992cbafa47e30f947c3c0c7a34e5c424bb83c5a0af8c24840481f
           - platform: mac-x64
             target: x86_64-apple-darwin
-            sdk-sha256: 011c099cef056fcf199d955287e7685d1de16037d54a095d9de6c61b0439cdb5
+            sdk-sha256: 9b8b0d7582ca25fac879f8f64de40f2481df2fd903b65f3abb5d6801689060ec
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

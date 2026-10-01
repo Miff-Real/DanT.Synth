@@ -1,432 +1,275 @@
-# Sets the name of the workflow, which is displayed in the GitHub Actions UI.
+# Builds and publishes the plugin for Linux, Windows and macOS.
+#
+# Stable:  a push to main publishes a release when plugin.json holds a
+#          MAJOR.MINOR.REVISION version that has no v<version> tag yet.
+#          Any other push to main stops after the plan job.
+# Nightly: run this workflow manually on dev, either from the Actions tab or with
+#            gh workflow run build-plugin.yml --ref dev
+#          It replaces the single rolling pre-release.
+# No other branch gets a release.
+#
+# To move to a new Rack SDK, update RACK_SDK_VERSION, the toolchain image digest
+# and the two sdk-sha256 values together.
 name: Build VCV Rack Plugin
 
-# Specifies the trigger for this workflow.
 on:
-  # Triggers the workflow on push events for main and dev branches.
   push:
-    branches: [ main, dev ]
-    # Also triggers on creation of tags matching 'v*' for stable releases,
-    # allowing for arbitrary postfix strings (e.g., v2.0.1-beta, v2.0.1-rc1).
-    tags:
-      - 'v*'
-  # Allows you to run this workflow manually from the Actions tab.
+    branches: [main]
   workflow_dispatch:
 
-# Defines environment variables that are available to all jobs and steps
-# in this workflow.
-env:
-  rack-sdk-version: 2.6.3
-  rack-plugin-toolchain-dir: /home/build/rack-plugin-toolchain
-  rack-plugin-name: DanTSynth
+# Jobs opt in to the access they need, so a compromised step in a build job
+# cannot write to the repository.
+permissions: {}
 
-# Sets default settings for all 'run' steps within the workflow.
+# A newer nightly supersedes one still building. A stable release is never cut short.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  RACK_SDK_VERSION: 2.6.3
+  RACK_TOOLCHAIN_DIR: /home/build/rack-plugin-toolchain
+  NIGHTLY_TAG: Nightly
+
 defaults:
   run:
-    # Specifies that all 'run' steps should use the Bash shell.
-    # Bash is required for commands such as pushd.
     shell: bash
 
-# This section defines all the jobs that the workflow will execute.
-# Jobs run in parallel by default unless dependencies are specified.
 jobs:
-  # Check if the 'version' property in plugin.json has changed.
-  check-version-change:
-    # This job runs on any push event. Its logic will determine if a relevant version change occurred.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    name: Check Plugin Version Change
+  plan:
+    name: Plan
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
     outputs:
-      # Output variable indicating if the version has changed.
-      version_changed: ${{ steps.version_check.outputs.version_changed }}
+      channel: ${{ steps.plan.outputs.channel }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
     steps:
-      # Checkout the repository code, fetching enough history to compare current and previous commits.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Fetch depth of 2 to get current and previous commit for comparison.
-          fetch-depth: 2
-      # Configure Git to trust the repository directory for operations.
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Step to compare plugin.json versions and set an output.
-      - name: Compare plugin.json versions
-        id: version_check # ID for this step to reference its outputs.
+          persist-credentials: false
+      - name: Decide what to release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # If the workflow was manually dispatched, we can skip the version check
-          # and force the build.
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Workflow was manually dispatched. Forcing build."
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          version=$(jq -er '.version' plugin.json)
+          channel=none
+          tag=''
 
-          PREVIOUS_VERSION=""
-          CURRENT_VERSION=""
-          # Get the version from plugin.json in the current commit (HEAD).
-          CURRENT_VERSION=$(jq -r .version plugin.json)
-          # Get the version from plugin.json in the previous commit (HEAD~1).
-          PREVIOUS_VERSION=$(git show HEAD~1:plugin.json | jq -r .version)
-          # Compare the versions.
-          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
-            echo "Plugin version has changed from $PREVIOUS_VERSION to $CURRENT_VERSION."
-            # Set the output variable to true if versions are different.
-            echo "version_changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "Plugin version has NOT changed. Current: $CURRENT_VERSION, Previous: $PREVIOUS_VERSION."
-            # Set the output variable to false otherwise.
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-          fi
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              # Asking whether the tag exists, rather than diffing against the
+              # previous commit, catches a version bump anywhere in a push and
+              # lets a failed release be re-run.
+              if [[ ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "::warning::plugin.json version '$version' is not MAJOR.MINOR.REVISION, so nothing was released."
+              else
+                tag="v$version"
+                existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$tag" \
+                  --jq "map(select(.ref == \"refs/tags/$tag\")) | length")
+                if [[ $existing -eq 0 ]]; then
+                  channel=stable
+                else
+                  echo "::notice::$tag is already released, so there is nothing to build."
+                fi
+              fi
+              ;;
+            refs/heads/dev)
+              channel=nightly
+              tag=$NIGHTLY_TAG
+              version="$version-${GITHUB_SHA::7}"
+              ;;
+            *)
+              echo "::error::Releases are only built from main and dev, not from $GITHUB_REF_NAME."
+              exit 1
+              ;;
+          esac
 
-  # This job handles the Windows and Linux stable builds.
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "Channel: \`$channel\`, version: \`$version\`" >> "$GITHUB_STEP_SUMMARY"
+
   build-lin-win:
-    # This job runs only if the 'check-version-change' job indicates a version change,
-    # or if a tag is pushed.
-    # The 'needs' dependency ensures 'check-version-change' completes, and its output is used.
-    if: (github.ref == 'refs/heads/main' && needs.check-version-change.outputs.version_changed == 'true') || startsWith(github.ref, 'refs/tags/')
-    # This job depends on the check-version-change job to get its output.
-    needs: check-version-change
-    # The name of the job as it appears in the UI. It's dynamically set
-    # from the 'platform' value in the build matrix (e.g., "win-x64").
     name: Build ${{ matrix.platform }}
-    # Specifies the type of machine to run the job on. Here, it's an
-    # Ubuntu 24.04 runner.
+    needs: plan
+    if: needs.plan.outputs.channel != 'none'
     runs-on: ubuntu-24.04
-    # This job will run inside a Docker container, ensuring a consistent
-    # and isolated build environment.
+    timeout-minutes: 30
+    permissions:
+      contents: read
     container:
-      # The Docker image to use for the job. This image contains the necessary
-      # toolchain for building VCV Rack plugins for Windows and Linux.
-      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux:rack-sdk-2.6.3
-      # Runs commands inside the container as the 'root' user.
+      # rack-sdk-2.6.3
+      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux@sha256:d2be3be862cbf52fee0c9519baf66b7628ad95e836fd920ad971aceaaf6b9ddf
+      # The checkout is owned by root, and the toolchain builds inside it.
       options: --user root
-    # Defines a build matrix. This allows you to run the same job multiple
-    # times with different configurations.
     strategy:
       matrix:
         platform: [lin-x64, win-x64]
-    # Contains the sequence of tasks that will be executed in this job.
     steps:
-      # This step uses a pre-made action to check out the repository code
-      # onto the runner. The version is pinned for better security.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
-      # Set PLUGIN_DIR and RACK_DIR environment variables for subsequent steps.
-      - name: Set Build Environment variables
+          persist-credentials: false
+      - name: Stamp nightly version
+        if: needs.plan.outputs.channel == 'nightly'
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          echo "PLUGIN_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-          # Set RACK_DIR to the toolchain directory, as the SDK is part of the container.
-          echo "RACK_DIR=${{ env.rack-plugin-toolchain-dir }}" >> $GITHUB_ENV
-      # - name: Run tests
-      #   run: |
-      #     # Run tests from the main repository directory where tests.mk is located.
-      #     make test
+          jq --arg version "$VERSION" '.version = $version' plugin.json > plugin.json.tmp
+          mv plugin.json.tmp plugin.json
       - name: Build plugin
+        env:
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          # Change directory to the toolchain directory to run the plugin build.
-          pushd ${{ env.rack-plugin-toolchain-dir }}
-          # Run the make command to build the plugin for the specific platform
-          # from the matrix.
-          make plugin-build-${{ matrix.platform }}
-          popd # Return to the original directory
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+          # GITHUB_WORKSPACE is the path inside the container; the
+          # github.workspace expression would give the host path instead.
+          export PLUGIN_DIR="$GITHUB_WORKSPACE"
+          # The toolchain finds its Rack SDK through $(PWD), which make -C
+          # does not update.
+          cd "$RACK_TOOLCHAIN_DIR"
+          make -j"$(nproc)" "plugin-build-$PLATFORM"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          overwrite: true
-          path: ${{ env.rack-plugin-toolchain-dir }}/plugin-build
-          name: ${{ env.rack-plugin-name }}-${{ matrix.platform }}
+          name: plugin-${{ matrix.platform }}
+          path: ${{ env.RACK_TOOLCHAIN_DIR }}/plugin-build
+          if-no-files-found: error
+          # Artifacts only carry files to the release job, and they count
+          # against the Actions storage quota while they exist.
+          retention-days: 1
+          # A .vcvplugin is already compressed.
+          compression-level: 0
 
-  # This is the job for building on macOS.
   build-mac:
-    # This job runs only if the 'check-version-change' job indicates a version change,
-    # or if a tag is pushed.
-    # The 'needs' dependency ensures 'check-version-change' completes, and its output is used.
-    if: (github.ref == 'refs/heads/main' && needs.check-version-change.outputs.version_changed == 'true') || startsWith(github.ref, 'refs/tags/')
-    # This job depends on the check-version-change job to get its output.
-    needs: check-version-change
-    # The name of the job as it appears in the UI.
-    name: mac
-    runs-on: macos-14
+    name: Build ${{ matrix.platform }}
+    needs: plan
+    if: needs.plan.outputs.channel != 'none'
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
-      # If one of the matrix jobs fails, the other jobs will continue to run.
-      fail-fast: false
       matrix:
-        platform: [arm64, x64]
+        include:
+          - platform: mac-arm64
+            target: arm64-apple-darwin
+            sdk-sha256: a256d7f8c97c004419db4bef5a5f461c250c4ad2d877ab2e4454ecefd1a847cf
+          - platform: mac-x64
+            target: x86_64-apple-darwin
+            sdk-sha256: 011c099cef056fcf199d955287e7685d1de16037d54a095d9de6c61b0439cdb5
     steps:
-      # Checks out the repository code, including submodules.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
-      # A custom step to download and prepare the VCV Rack SDK.
-      - name: Get Rack-SDK
+          persist-credentials: false
+      - name: Stamp nightly version
+        if: needs.plan.outputs.channel == 'nightly'
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          pushd $HOME
-          wget -O Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-${{ env.rack-sdk-version }}-mac-${{ matrix.platform }}.zip
-          unzip Rack-SDK.zip
-      # Setup common macOS build environment variables and ARCH_TYPE.
-      - name: Setup macOS Build Environment
+          jq --arg version "$VERSION" '.version = $version' plugin.json > plugin.json.tmp
+          mv plugin.json.tmp plugin.json
+      - name: Get Rack SDK
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          SDK_SHA256: ${{ matrix.sdk-sha256 }}
         run: |
-          ARCH_TYPE=""
-          if [ "${{ matrix.platform }}" == "x64" ]; then
-            ARCH_TYPE="x86_64"
-          elif [ "${{ matrix.platform }}" == "arm64" ]; then
-            ARCH_TYPE="arm64"
-          fi
-          echo "ARCH=$ARCH_TYPE" >> $GITHUB_ENV
-          echo "RACK_DIR=$HOME/Rack-SDK" >> $GITHUB_ENV
-      # - name: Run tests
-      #   run: |
-      #     make test ARCH=$ARCH
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/Rack-SDK.zip" \
+            "https://vcvrack.com/downloads/Rack-SDK-$RACK_SDK_VERSION-$PLATFORM.zip"
+          echo "$SDK_SHA256  $RUNNER_TEMP/Rack-SDK.zip" | shasum --algorithm 256 --check
+          unzip -q "$RUNNER_TEMP/Rack-SDK.zip" -d "$RUNNER_TEMP"
       - name: Build plugin
+        env:
+          # Both architectures build on the same Apple silicon runner.
+          CROSS_COMPILE: ${{ matrix.target }}
         run: |
-          export CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin
-          export CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin
-          export CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}
-          make dep ARCH=$ARCH
-          make dist ARCH=$ARCH
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+          export RACK_DIR="$RUNNER_TEMP/Rack-SDK"
+          make dep
+          make -j"$(sysctl -n hw.logicalcpu)" dist
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          overwrite: true
+          name: plugin-${{ matrix.platform }}
           path: dist/*.vcvplugin
-          name: ${{ env.rack-plugin-name }}-mac-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
-  # This job handles the Windows and Linux NIGHTLY builds from the 'dev' branch.
-  build-nightly-lin-win:
-    # This job only runs for pushes or manual dispatches on the 'dev' branch.
-    if: github.ref == 'refs/heads/dev'
-    name: Build Nightly ${{ matrix.platform }}
+  release:
+    name: Release (${{ needs.plan.outputs.channel }})
+    needs: [plan, build-lin-win, build-mac]
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/bloodbat/rack-plugin-toolchain-win-linux:rack-sdk-2.6.3
-      options: --user root
-    strategy:
-      matrix:
-        platform: [lin-x64, win-x64]
+    timeout-minutes: 10
+    permissions:
+      contents: write # creates the release and its tag, removes the previous nightly
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
-      # Checkout the repository code.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
-      # Configure Git to trust the repository directory for operations within the container.
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # This step appends the commit hash to the version in plugin.json.
-      - name: Update version for nightly build
-        run: |
-          current_version=$(jq -r .version plugin.json)
-          short_sha=$(git rev-parse --short HEAD)
-          new_version="${current_version}-${short_sha}"
-          jq ".version = \"$new_version\"" plugin.json > tmp.json && mv tmp.json plugin.json
-          echo "Updated plugin.json version to: $(jq -r .version plugin.json)"
-      # Set PLUGIN_DIR and RACK_DIR environment variables for subsequent steps.
-      - name: Set Build Environment variables
-        run: |
-          echo "PLUGIN_DIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
-          # Set RACK_DIR to the toolchain directory, as the SDK is part of the container.
-          echo "RACK_DIR=${{ env.rack-plugin-toolchain-dir }}" >> $GITHUB_ENV
-      # - name: Run tests
-      #   run: |
-      #     # Run tests from the main repository directory where tests.mk is located.
-      #     make test
-      - name: Build plugin
-        run: |
-          # Change directory to the toolchain directory to run the plugin build.
-          pushd ${{ env.rack-plugin-toolchain-dir }}
-          # Run the make command to build the plugin for the specific platform
-          # from the matrix.
-          make plugin-build-${{ matrix.platform }}
-          popd # Return to the original directory
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          overwrite: true
-          path: ${{ env.rack-plugin-toolchain-dir }}/plugin-build
-          # The artifact name is suffixed with '-nightly'.
-          name: ${{ env.rack-plugin-name }}-${{ matrix.platform }}-nightly
-
-  # This job handles the macOS NIGHTLY builds from the 'dev' branch.
-  build-nightly-mac:
-    if: github.ref == 'refs/heads/dev'
-    name: Build Nightly mac
-    runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [arm64, x64]
-    steps:
-      # Checkout the repository code.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          submodules: recursive
-      # Configure Git to trust the repository directory for operations within the runner.
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - name: Update version for nightly build
-        run: |
-          current_version=$(jq -r .version plugin.json)
-          short_sha=$(git rev-parse --short HEAD)
-          new_version="${current_version}-${short_sha}"
-          jq ".version = \"$new_version\"" plugin.json > tmp.json && mv tmp.json plugin.json
-          echo "Updated plugin.json version to: $(jq -r .version plugin.json)"
-      # A custom step to download and prepare the VCV Rack SDK.
-      - name: Get Rack-SDK
-        run: |
-          pushd $HOME
-          wget -O Rack-SDK.zip https://vcvrack.com/downloads/Rack-SDK-${{ env.rack-sdk-version }}-mac-${{ matrix.platform }}.zip
-          unzip Rack-SDK.zip
-      # Setup common macOS Build Environment variables and ARCH_TYPE.
-      - name: Setup macOS Build Environment
-        run: |
-          ARCH_TYPE=""
-          if [ "${{ matrix.platform }}" == "x64" ]; then
-            ARCH_TYPE="x86_64"
-          elif [ "${{ matrix.platform }}" == "arm64" ]; then
-            ARCH_TYPE="arm64"
-          fi
-          echo "ARCH=$ARCH_TYPE" >> $GITHUB_ENV
-          echo "RACK_DIR=$HOME/Rack-SDK" >> $GITHUB_ENV
-      # - name: Run tests
-      #   run: |
-      #     make test ARCH=$ARCH
-      - name: Build plugin
-        run: |
-          export CROSS_COMPILE_TARGET_x64=x86_64-apple-darwin
-          export CROSS_COMPILE_TARGET_arm64=arm64-apple-darwin
-          export CROSS_COMPILE=$CROSS_COMPILE_TARGET_${{ matrix.platform }}
-          make dep ARCH=$ARCH
-          make dist ARCH=$ARCH
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          overwrite: true
-          path: dist/*.vcvplugin
-          name: ${{ env.rack-plugin-name }}-mac-${{ matrix.platform }}-nightly
-
-  # Job to publish stable releases to GitHub.
-  release-stable:
-    # This job depends on the stable build jobs.
-    needs:
-      - build-lin-win
-      - build-mac
-    runs-on: ubuntu-24.04
-    steps:
-      # Checkout the repository code to access Git history for release notes.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          # Fetch all history for all branches and tags.
+          # The release notes need the full history and the release tags.
           fetch-depth: 0
-      # Configure Git to trust the repository directory for operations.
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Get the version from plugin.json and prepend 'v' to use in the tag name.
-      - name: Get version
-        id: get_version
-        run: echo "VERSION_STR=v$(jq -r .version plugin.json)" >> $GITHUB_ENV
-      # Download all stable build artifacts.
-      - name: Download stable build artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          pattern: plugin-*
           path: _artifacts
-      # Generate release notes for stable releases.
-      - name: Generate Stable Release Notes
-        id: stable_release_notes
+      - name: Collect packages
         run: |
-          CURRENT_TAG=${{ env.VERSION_STR }}
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${CURRENT_TAG}^ 2>/dev/null || echo "")
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "No previous tag found. Listing all commits up to ${CURRENT_TAG}."
-            RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${CURRENT_TAG})
-          else
-            echo "PREV_VERSION_STR=${PREVIOUS_TAG}" >> $GITHUB_ENV
-            echo "Generating notes from ${PREVIOUS_TAG} to ${CURRENT_TAG}."
-            RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${PREVIOUS_TAG}..${CURRENT_TAG})
+          mkdir dist
+          find _artifacts -type f -name "*-$VERSION-*.vcvplugin" -exec mv -t dist {} +
+          count=$(find dist -type f | wc -l)
+          if [[ $count -ne 4 ]]; then
+            echo "::error::Expected 4 packages for version $VERSION, found $count."
+            exit 1
           fi
-          echo "release_body<<EOF" >> $GITHUB_OUTPUT
-          echo "## Changes in ${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      # Delete old release assets to keep the repository clean.
-      - name: Delete old release assets
-        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{  env.PREV_VERSION_STR }}
-          deleteOnlyFromDrafts: false
-      # Create and upload the stable release.
-      - name: Create Stable GitHub Release
-        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ env.VERSION_STR }}
-          file_glob: true
-          file: _artifacts/**/*.vcvplugin
-          overwrite: true
-          release_name: "Release ${{ env.VERSION_STR }}"
-          draft: false
-          prerelease: false
-          make_latest: true
-          body: ${{ steps.stable_release_notes.outputs.release_body }}
-
-  # Job to publish nightly releases to GitHub.
-  release-nightly:
-    # This job depends on the nightly build jobs.
-    needs:
-      - build-nightly-lin-win
-      - build-nightly-mac
-    runs-on: ubuntu-24.04
-    steps:
-      # Checkout the repository code to access Git history for release notes.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-      # Configure Git to trust the repository directory for operations.
-      - name: Configure Git safe directory
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Download all nightly build artifacts.
-      - name: Download nightly build artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: _artifacts
-      - name: Delete old release assets
-        uses: andreaswilli/delete-release-assets-action@cee1e4ece007d910b3555134b0c8109687469ec3 # v4.0.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: Nightly
-          deleteOnlyFromDrafts: false
-      # Generate release notes for nightly builds.
-      - name: Generate Nightly Release Notes
-        id: nightly_release_notes
+          (cd dist && sha256sum -- *.vcvplugin | tee SHA256SUMS)
+      - name: Write release notes
         run: |
-          CURRENT_NIGHTLY_TAG="nightly-${{ github.sha }}"
-          PREVIOUS_NIGHTLY_TAG=$(git tag -l "nightly-*" | sort -rV | head -n 2 | tail -n 1)
-          if [ -z "$PREVIOUS_NIGHTLY_TAG" ]; then
-            echo "No previous nightly tag found. Listing last 20 commits on 'dev' branch."
-            RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" -n 20)
+          previous=$(git for-each-ref --count=1 --sort=-version:refname \
+            --format='%(refname:short)' 'refs/tags/v[0-9]*')
+          {
+            if [[ $CHANNEL == nightly ]]; then
+              echo "Nightly build of \`dev\` at ${GITHUB_SHA::7}. This is a pre-release for testing."
+              echo
+            fi
+            if [[ -n $previous ]]; then
+              echo "## Changes since $previous"
+              echo
+              changes=$(git log --no-merges --pretty='format:* %s (%h)' "$previous..HEAD")
+            else
+              echo "## Changes"
+              echo
+              changes=$(git log --no-merges --pretty='format:* %s (%h)')
+            fi
+            echo "${changes:-* No changes.}"
+          } > notes.md
+          cat notes.md
+      - name: Publish release
+        run: |
+          if [[ $CHANNEL == nightly ]]; then
+            # The nightly is one rolling release. Recreating it moves the tag to
+            # the commit that was built and leaves a single set of files.
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              gh release delete "$TAG" --cleanup-tag --yes
+            fi
+            # A tag can outlive its release, and would pin the new one to an old commit.
+            leftover=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$TAG" \
+              --jq "map(select(.ref == \"refs/tags/$TAG\")) | length")
+            if [[ $leftover -ne 0 ]]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG"
+            fi
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
+              --title "Nightly $VERSION" --notes-file notes.md --prerelease --latest=false
           else
-            echo "Generating nightly notes from ${PREVIOUS_NIGHTLY_TAG} to ${CURRENT_NIGHTLY_TAG}."
-            RELEASE_NOTES=$(git log --pretty=format:"* %s (%h)" ${PREVIOUS_NIGHTLY_TAG}..HEAD)
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
+              --title "Release $TAG" --notes-file notes.md --latest
           fi
-          echo "release_body<<EOF" >> $GITHUB_OUTPUT
-          echo "## Nightly Build - ${{ github.sha }}" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "This is a nightly build from the 'dev' branch." >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "### Recent Commits:" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-      # Create and upload the nightly release.
-      - name: Create Nightly GitHub Release
-        uses: svenstaro/upload-release-action@81c65b7cd4de9b2570615ce3aad67a41de5b1a13 # v2.11.2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          tag: Nightly
-          file_glob: true
-          file: _artifacts/**/*.vcvplugin
-          overwrite: true
-          release_name: "Nightly Build - ${{ github.sha }}"
-          draft: false
-          prerelease: true
-          make_latest: true
-          body: ${{ steps.nightly_release_notes.outputs.release_body }}
+          gh release view "$TAG" --json url --jq '"Published " + .url' >> "$GITHUB_STEP_SUMMARY"

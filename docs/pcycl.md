@@ -42,7 +42,7 @@ Each icon on the panel sits above the port it describes.
   other channels output is set in the context menu, see `Idle channels` below.
 
 * **`[Poly] Trigger output`**: The trigger input, on the same channel as the signal. The other channels are at `0V`.
-  It can instead send a trigger or gate made by the module, see `Advance on signal jump` below.
+  It can instead send a trigger or gate made by the module, see `Trigger output` below.
 
 When the module is bypassed both inputs are passed to their outputs unchanged, as mono signals.
 
@@ -55,22 +55,26 @@ When the module is bypassed both inputs are passed to their outputs unchanged, a
 
 * **Signal delay**: Delays the signal by `0` to `8` samples. See `Timing` below for when this is needed.
 
-* **Advance on signal jump**: When enabled, the signal also moves to the next channel whenever it jumps by the
+* **Trigger output**: What the trigger output sends. A note starts each time the signal moves to the next channel,
+  and on the first trigger after a reset.
+  * `Pass trigger input` (default): The trigger input is passed through.
+  * `Off`: The output stays at `0V`.
+  * `Trigger for each note`: A `1ms`, `10V` trigger is sent on the new channel each time a note starts.
+  * `Gate for each note`: A `10V` gate is sent on the new channel each time a note starts. Its length is set by
+    `Gate length`. Gates on different channels overlap. If a channel is used again before its gate has finished, the
+    gate drops to `0V` for one sample so that the voice is triggered again.
+
+* **Gate length**: The length of the gate sent by `Gate for each note`, from `0.01` to `2` seconds. The default is
+  `0.1` seconds.
+
+* **Automatic channel increment**: When enabled, the signal also moves to the next channel whenever it jumps by the
   threshold or more. With a `V/Oct` signal and the default threshold of one semitone, each different note played on a
   keyboard is given a new channel, including notes played legato where the gate never falls.
   * **Threshold**: The size of jump that counts, from `0.01V` to `2V`. The default is `0.083V`, one semitone.
   * Only jumps count. Slow movement such as a glide, vibrato or pitch bend stays on the same channel.
   * A jump and a trigger that arrive within `1ms` of each other are treated as one note, so patching both does not
     skip a channel.
-  * **Trigger output**: What the trigger output sends while this feature is enabled. It is useful when there is no
-    gate to patch to the trigger input.
-    * `Pass trigger input` (default): The trigger input is passed through, as it is when the feature is disabled.
-    * `Off`: The output stays at `0V`.
-    * `Trigger for each note`: A `1ms`, `10V` trigger is sent on the new channel each time a note starts.
-    * `Gate for each note`: A `10V` gate is sent on the new channel each time a note starts. Its length is set by
-      `Gate length`. Gates on different channels overlap. If a channel is used again before its gate has finished,
-      the gate drops to `0V` for one sample so that the voice is triggered again.
-  * **Gate length**: The length of the gate, from `0.01` to `2` seconds. The default is `0.1` seconds.
+  * If there is no gate to patch to the trigger input, set `Trigger output` to send a trigger or gate for each note.
 
 ## Timing
 
@@ -88,8 +92,8 @@ arrives, so what happens at a note change depends on whether the signal and its 
 * **Trigger arrives first**: The previous channel is not affected. The new channel outputs the old value for the
   samples in between, which is the same as would happen in the patch without `PCycl`.
 
-Enabling `Advance on signal jump` also protects the previous channel when a stepped signal arrives first, because the
-jump moves to the new channel before the trigger arrives.
+Enabling `Automatic channel increment` also protects the previous channel when a stepped signal arrives first, because
+the jump moves to the new channel before the trigger arrives.
 
 ## Patch Example
 

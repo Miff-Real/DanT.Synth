@@ -62,7 +62,7 @@ struct PcyclModule : rack::engine::Module {
   int signalDelay{0};
   bool advanceOnChange{false};
   float changeThreshold{PCYCL_DEFAULT_THRESHOLD};
-  // what the trigger output sends while advancing on signal jumps, saved by index so only append to it
+  // what the trigger output sends, saved by index so only append to it
   enum TrigOutMode { TRIG_OUT_PASS, TRIG_OUT_OFF, TRIG_OUT_TRIGGER, TRIG_OUT_GATE, NUM_TRIG_OUT_MODES };
   TrigOutMode trigOutMode{TRIG_OUT_PASS};
   float gateSeconds{PCYCL_DEFAULT_GATE_SECONDS};
@@ -221,9 +221,9 @@ struct PcyclModule : rack::engine::Module {
     followCoeff = 1.0f - std::exp(-1.0f / (sampleRate * PCYCL_WINDOW_SECONDS));
   }
 
-  // the trigger output choice belongs to advancing on signal jumps, without that the input is always passed through
+  // a trigger and a gate are the same pulse to the DSP code, they only differ in length
   inline void setGateOptions(DANT::PolyCycleOpts& processOptions, const float sampleRate) {
-    if (!advanceOnChange || trigOutMode == TRIG_OUT_PASS) {
+    if (trigOutMode == TRIG_OUT_PASS) {
       processOptions.gateMode = DANT::GATE_PASS;
     } else if (trigOutMode == TRIG_OUT_OFF) {
       processOptions.gateMode = DANT::GATE_OFF;
@@ -250,13 +250,28 @@ struct PcyclModule : rack::engine::Module {
 /**
  * Widgets: UI thread.
  */
-static const std::string PCYCL_NEXT_CHANNEL{""};
-static const std::string PCYCL_RESET{""};
+static const std::string PCYCL_NEXT_CHANNEL{"\ue044"};
+static const std::string PCYCL_RESET{"\uf56c"};
 
 struct PcyclChannelCountWidget : rack::widget::TransparentWidget {
   PcyclModule* module;
 
   PcyclChannelCountWidget(PcyclModule* m) { this->module = m; }
+
+  // the lit number is hard to read against a bright panel without something behind it
+  void draw(const rack::widget::Widget::DrawArgs& args) override {
+    nvgSave(args.vg);
+
+    NVGcolor countBG{DANT::Colours::getTextColour()};
+    countBG.a = 0.5f;
+
+    nvgFillColor(args.vg, countBG);
+    nvgBeginPath(args.vg);
+    nvgRoundedRect(args.vg, 0.0f, 0.0f, this->box.size.x, this->box.size.y, 4.0f);
+    nvgFill(args.vg);
+
+    nvgRestore(args.vg);
+  }
 
   void drawLayer(const rack::widget::Widget::DrawArgs& args, int layer) override {
     if (layer == 1) {
@@ -301,8 +316,8 @@ struct PcyclWidget : DANT::ModuleWidget {
     // sub-widgets
     {
       PcyclChannelCountWidget* countDisplay = new PcyclChannelCountWidget(module);
-      countDisplay->setSize(rack::math::Vec(this->box.size.x, _Y * 2.0f));
-      countDisplay->setPosition(rack::math::Vec(0.0f, DANT::layout(2.0f, 9.0f).y - _Y));
+      countDisplay->setSize(rack::math::Vec(20.0f, 13.0f));
+      countDisplay->setPosition(DANT::layout(2.0f, 9.0f).minus(countDisplay->getSize().mult(0.5f)));
       addChild(countDisplay);
     }
 
@@ -396,21 +411,20 @@ struct PcyclWidget : DANT::ModuleWidget {
         {"None", "1 sample", "2 samples", "3 samples", "4 samples", "5 samples", "6 samples", "7 samples", "8 samples"},
         [=]() { return static_cast<size_t>(module->signalDelay); },
         [=](size_t samples) { module->signalDelay = static_cast<int>(samples); }));
-    menu->addChild(rack::createSubmenuItem("Advance on signal jump", "", [=](rack::ui::Menu* menu) {
+    menu->addChild(rack::createIndexSubmenuItem(
+        "Trigger output", {"Pass trigger input", "Off", "Trigger for each note", "Gate for each note"},
+        [=]() { return static_cast<size_t>(module->trigOutMode); },
+        [=](size_t mode) { module->trigOutMode = static_cast<PcyclModule::TrigOutMode>(mode); }));
+    menu->addChild(new DANT::MenuSlider(
+        new DANT::FloatValueQuantity("Gate length", PCYCL_MIN_GATE_SECONDS, PCYCL_MAX_GATE_SECONDS,
+                                     PCYCL_DEFAULT_GATE_SECONDS, &module->gateSeconds, "s", 1.0f, "%.2f"),
+        DANT::RGB_SLIDER_WIDTH));
+    menu->addChild(rack::createSubmenuItem("Automatic channel increment", "", [=](rack::ui::Menu* menu) {
       menu->addChild(rack::createBoolPtrMenuItem("Enabled", "", &module->advanceOnChange));
       menu->addChild(
           new DANT::MenuSlider(new PcyclThresholdQuantity("Threshold", PCYCL_MIN_THRESHOLD, PCYCL_MAX_THRESHOLD,
                                                           PCYCL_DEFAULT_THRESHOLD, &module->changeThreshold),
                                DANT::RGB_SLIDER_WIDTH));
-      menu->addChild(new rack::ui::MenuSeparator);
-      menu->addChild(rack::createIndexSubmenuItem(
-          "Trigger output", {"Pass trigger input", "Off", "Trigger for each note", "Gate for each note"},
-          [=]() { return static_cast<size_t>(module->trigOutMode); },
-          [=](size_t mode) { module->trigOutMode = static_cast<PcyclModule::TrigOutMode>(mode); }));
-      menu->addChild(new DANT::MenuSlider(
-          new DANT::FloatValueQuantity("Gate length", PCYCL_MIN_GATE_SECONDS, PCYCL_MAX_GATE_SECONDS,
-                                       PCYCL_DEFAULT_GATE_SECONDS, &module->gateSeconds, "s", 1.0f, "%.2f"),
-          DANT::RGB_SLIDER_WIDTH));
     }));
   }
 };

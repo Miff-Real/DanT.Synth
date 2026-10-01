@@ -9,6 +9,7 @@ namespace DANT {
 
 static const int POLY_CYCLE_MAX_DELAY{64};  // samples
 static const int POLY_CYCLE_HISTORY{POLY_CYCLE_MAX_DELAY + 1};
+// Stands for "no such event", longer than any window and small enough to count up from without overflowing.
 static const int POLY_CYCLE_LONG_AGO{1 << 20};
 // Adjacent notes are a semitone apart only to within floating point error, without this a threshold of exactly one
 // semitone would miss some of them.
@@ -23,6 +24,7 @@ static const float POLY_CYCLE_STEP_MIN{0.001f};
 static const int POLY_CYCLE_FLAT_SAMPLES{4};
 
 enum IDLE_MODE { IDLE_HOLD, IDLE_ZERO };
+
 enum GATE_MODE { GATE_PASS, GATE_OFF, GATE_PULSE };
 
 struct PolyCycleOpts {
@@ -45,82 +47,78 @@ struct PolyCycleOpts {
 /**
  * Routes a mono signal to one channel of a poly output, moving to the next channel on each trigger.
  * The trigger voltage is routed alongside it, on the same channel, or replaced by a pulse made for each note.
+ *
+ * A "note" starts each time the signal moves to the next channel. The first note after start up or a reset stays on
+ * the first channel.
  */
 struct PolyCycle {
   enum Source { SOURCE_NONE, SOURCE_TRIGGER, SOURCE_CHANGE };
 
+  // The inputs after timing correction, as the rest of the code sees them.
+  struct Inputs {
+    float signal;
+    float trigVoltage;
+    bool trigger;
+  };
+
+  /**
+   * Results, read these after calling step.
+   */
   float outs[DANT::CHANS]{};
   float gateOuts[DANT::CHANS]{};
-  int gateRemaining[DANT::CHANS]{};  // samples left of each channel's generated pulse
-  int gapRemaining[DANT::CHANS]{};   // samples left of the low period that lets a voice retrigger
-  int active{0};
-  // The next advance keeps the active channel, so the first note after start up or a reset lands on the first
-  // channel.
+  int active{0};  // channel currently receiving the signal
+  int skew{0};    // samples the trigger arrives before the signal, negative if it arrives after
+
+  /**
+   * Channel state.
+   */
+  // The next note keeps the active channel instead of moving on, so that it lands on the first channel.
   bool armed{true};
   // Set by a reset that clears the outputs, nothing is sent until the next note starts.
   bool muted{false};
+  // True for the one sample on which a note starts.
+  bool noteStarted{false};
+  int gateRemaining[DANT::CHANS]{};  // samples left of each channel's generated pulse
+  int gapRemaining[DANT::CHANS]{};   // samples left of the low period that lets a voice retrigger
 
+  /**
+   * Recent input, so that either the signal or the trigger can be delayed.
+   */
   float history[POLY_CYCLE_HISTORY]{};
   float trigHistory[POLY_CYCLE_HISTORY]{};
   bool edgeHistory[POLY_CYCLE_HISTORY]{};
   int historyIndex{0};
   int lastTrigDelay{0};
 
-  // Timing measurement. Every cable adds a sample of delay, so a signal and a trigger that left their source together
-  // arrive apart when their routes differ in length. The gap is fixed by the patch, so it is measured on one note and
-  // corrected from the next.
+  /**
+   * Timing measurement. Every cable adds a sample of delay, so a signal and a trigger that left their source together
+   * arrive apart when their routes differ in length. The gap is fixed by the patch, so it is measured on one note and
+   * corrected from the next.
+   */
   float lastSignal{0.0f};
   int flatSamples{0};
   int stepAge{POLY_CYCLE_LONG_AGO};  // samples since a step that has not yet been matched to a trigger
   int edgeAge{POLY_CYCLE_LONG_AGO};  // samples since a trigger that has not yet been matched to a step
-  int skew{0};                       // samples the trigger arrives before the signal, negative if it arrives after
   bool lateStep{false};              // this sample's step belongs to a trigger that has already been acted on
 
-  // Follows slow movement of the signal, so that only a jump away from it counts as a change.
-  float reference{0.0f};
-
-  // A trigger and a jump that belong to the same note can arrive a sample or two apart, as can a reset and the
-  // trigger it belongs to. These let the later event recognise the earlier one instead of acting twice.
+  /**
+   * Event matching. A trigger and a jump that belong to the same note can arrive a sample or two apart, as can a
+   * reset and the trigger it belongs to. These let the later event recognise the earlier one instead of acting twice.
+   */
+  float reference{0.0f};  // follows slow movement of the signal, only a jump away from it counts as a change
   int samplesSinceAdvance{POLY_CYCLE_LONG_AGO};
   Source lastSource{SOURCE_NONE};
   int undoChannel{-1};
   float undoValue{0.0f};
 
-  bool noteStarted{false};
-
+  /**
+   * Options seen on the previous sample, to notice when they change.
+   */
   int lastChannels{0};
   IDLE_MODE lastIdleMode{IDLE_HOLD};
   GATE_MODE lastGateMode{GATE_PASS};
 
-  void reset() {
-    std::fill(outs, outs + DANT::CHANS, 0.0f);
-    std::fill(gateOuts, gateOuts + DANT::CHANS, 0.0f);
-    std::fill(gateRemaining, gateRemaining + DANT::CHANS, 0);
-    std::fill(gapRemaining, gapRemaining + DANT::CHANS, 0);
-    std::fill(history, history + POLY_CYCLE_HISTORY, 0.0f);
-    std::fill(trigHistory, trigHistory + POLY_CYCLE_HISTORY, 0.0f);
-    std::fill(edgeHistory, edgeHistory + POLY_CYCLE_HISTORY, false);
-    historyIndex = 0;
-    lastTrigDelay = 0;
-    lastSignal = 0.0f;
-    flatSamples = 0;
-    stepAge = POLY_CYCLE_LONG_AGO;
-    edgeAge = POLY_CYCLE_LONG_AGO;
-    skew = 0;
-    lateStep = false;
-    active = 0;
-    armed = true;
-    muted = false;
-    reference = 0.0f;
-    samplesSinceAdvance = POLY_CYCLE_LONG_AGO;
-    lastSource = SOURCE_NONE;
-    undoChannel = -1;
-    undoValue = 0.0f;
-    noteStarted = false;
-    lastChannels = 0;
-    lastIdleMode = IDLE_HOLD;
-    lastGateMode = GATE_PASS;
-  }
+  void reset() { *this = PolyCycle(); }
 
   /**
    * Call once per sample, the results are in outs and gateOuts.
@@ -129,13 +127,55 @@ struct PolyCycle {
   void step(const float rawSignal, const float rawTrigVoltage, const bool rawTrigger, const bool resetTrigger,
             const PolyCycleOpts opts) {
     const int channels{std::min(std::max(opts.channels, 1), DANT::CHANS)};
-    const int window{std::min(std::max(opts.windowSamples, 1), POLY_CYCLE_MAX_DELAY)};
+    const Inputs in{alignInputs(rawSignal, rawTrigVoltage, rawTrigger, opts)};
 
+    applyChannelCount(channels);
+    applyIdleMode(opts.idleMode);
+
+    const bool changed{detectChange(in.signal, opts)};
+
+    if (samplesSinceAdvance < POLY_CYCLE_LONG_AGO) {
+      ++samplesSinceAdvance;
+    }
+    const bool recentAdvance{samplesSinceAdvance <= opts.windowSamples};
+    noteStarted = false;
+
+    if (resetTrigger) {
+      resetChannels(channels, recentAdvance, opts);
+    }
+
+    // A trigger and a jump for the same note only advance once, whichever arrives first.
+    if (in.trigger) {
+      if (!(recentAdvance && lastSource == SOURCE_CHANGE)) {
+        advance(SOURCE_TRIGGER, channels, opts.idleMode);
+      }
+    } else if (changed) {
+      if (!(recentAdvance && lastSource == SOURCE_TRIGGER)) {
+        advance(SOURCE_CHANGE, channels, opts.idleMode);
+      }
+    }
+
+    if (noteStarted) {
+      muted = false;
+    }
+
+    // The outputs are written after any channel change, so a new value that arrives on the same sample as its trigger
+    // is only ever seen by the new channel.
+    writeSignal(in.signal, opts);
+    writeGates(in.trigVoltage, channels, opts);
+  }
+
+  /**
+   * Timing correction.
+   */
+  // Stores the raw inputs and reads them back with whichever arrives first delayed to match the other.
+  inline Inputs alignInputs(const float rawSignal, const float rawTrigVoltage, const bool rawTrigger,
+                            const PolyCycleOpts& opts) {
     int signalDelay{std::min(std::max(opts.delaySamples, 0), POLY_CYCLE_MAX_DELAY)};
     int trigDelay{0};
     lateStep = false;
     if (opts.autoAlign) {
-      measureSkew(rawSignal, rawTrigger, window);
+      measureSkew(rawSignal, rawTrigger, std::min(std::max(opts.windowSamples, 1), POLY_CYCLE_MAX_DELAY));
       signalDelay = std::max(-skew, 0);
       trigDelay = std::max(skew, 0);
     } else {
@@ -147,104 +187,17 @@ struct PolyCycle {
     history[historyIndex] = rawSignal;
     trigHistory[historyIndex] = rawTrigVoltage;
     edgeHistory[historyIndex] = rawTrigger;
-    const float signal{history[tap(signalDelay)]};
-    const float trigVoltage{trigHistory[tap(trigDelay)]};
-    const bool trigger{readEdge(trigDelay)};
+
+    Inputs in;
+    in.signal = history[tap(signalDelay)];
+    in.trigVoltage = trigHistory[tap(trigDelay)];
+    in.trigger = readEdge(trigDelay);
+
     historyIndex = (historyIndex + 1) % POLY_CYCLE_HISTORY;
-
-    if (channels != lastChannels) {
-      std::fill(outs + channels, outs + DANT::CHANS, 0.0f);
-      std::fill(gateOuts + channels, gateOuts + DANT::CHANS, 0.0f);
-      std::fill(gateRemaining + channels, gateRemaining + DANT::CHANS, 0);
-      std::fill(gapRemaining + channels, gapRemaining + DANT::CHANS, 0);
-      if (active >= channels) {
-        active = 0;
-      }
-      lastChannels = channels;
-    }
-
-    if (samplesSinceAdvance < POLY_CYCLE_LONG_AGO) {
-      ++samplesSinceAdvance;
-    }
-
-    bool changed{false};
-    if (opts.advanceOnChange && std::fabs(signal - reference) >= opts.changeThreshold - POLY_CYCLE_CHANGE_TOLERANCE) {
-      changed = true;
-      reference = signal;
-    } else if (opts.advanceOnChange) {
-      reference += (signal - reference) * opts.followCoeff;
-    } else {
-      reference = signal;
-    }
-
-    const bool recentAdvance{samplesSinceAdvance <= opts.windowSamples};
-    noteStarted = false;
-
-    if (resetTrigger) {
-      // A note that started just before the reset belongs to it, and moves to the first channel with it.
-      const float noteValue{outs[active]};
-      const int notePulse{gateRemaining[active]};
-      if (recentAdvance && undoChannel > 0 && undoChannel < channels) {
-        outs[undoChannel] = undoValue;
-        gateRemaining[undoChannel] = 0;
-      }
-      leave(opts.idleMode);
-      active = 0;
-      armed = !recentAdvance;
-      undoChannel = -1;
-      if (opts.resetClears) {
-        std::fill(outs, outs + DANT::CHANS, 0.0f);
-        std::fill(gateRemaining, gateRemaining + DANT::CHANS, 0);
-        std::fill(gapRemaining, gapRemaining + DANT::CHANS, 0);
-        muted = armed;
-      }
-      if (recentAdvance) {
-        gateRemaining[0] = notePulse;
-        if (opts.sampleAndHold) {
-          outs[0] = noteValue;
-        }
-      }
-    }
-
-    if (trigger) {
-      if (!(recentAdvance && lastSource == SOURCE_CHANGE)) {
-        advance(SOURCE_TRIGGER, channels, opts.idleMode);
-      }
-    } else if (changed) {
-      if (!(recentAdvance && lastSource == SOURCE_TRIGGER)) {
-        advance(SOURCE_CHANGE, channels, opts.idleMode);
-      }
-    }
-
-    if (opts.idleMode != lastIdleMode) {
-      if (opts.idleMode == IDLE_ZERO) {
-        for (int c{0}; c < DANT::CHANS; ++c) {
-          if (c != active) {
-            outs[c] = 0.0f;
-          }
-        }
-      }
-      lastIdleMode = opts.idleMode;
-    }
-
-    if (noteStarted) {
-      muted = false;
-    }
-
-    // The outputs are written after any channel change, so a new value that arrives on the same sample as its trigger
-    // is only ever seen by the new channel.
-    if (opts.sampleAndHold) {
-      // A trigger that arrived ahead of its signal has sampled the old value. Until the timing correction has that
-      // gap measured it cannot prevent this, so the sample is taken again when the step it was waiting for arrives.
-      if (noteStarted || (lateStep && !muted)) {
-        outs[active] = signal;
-      }
-    } else if (!muted) {
-      outs[active] = signal;
-    }
-    writeGates(trigVoltage, channels, opts);
+    return in;
   }
 
+  // Index of the sample that arrived delay samples ago.
   inline int tap(const int delay) { return (historyIndex + POLY_CYCLE_HISTORY - delay) % POLY_CYCLE_HISTORY; }
 
   // When the trigger delay changes the read position jumps. Moving back would read triggers a second time, moving
@@ -264,12 +217,14 @@ struct PolyCycle {
     return edge || edgeHistory[tap(trigDelay)];
   }
 
+  // Matches each trigger to the step in the signal that belongs to it, and records how far apart they arrived.
   inline void measureSkew(const float rawSignal, const bool rawTrigger, const int window) {
     const float movement{std::fabs(rawSignal - lastSignal)};
     const bool stepped{movement > POLY_CYCLE_STEP_MIN && flatSamples >= POLY_CYCLE_FLAT_SAMPLES};
     flatSamples = movement <= POLY_CYCLE_FLAT_EPSILON ? std::min(flatSamples + 1, POLY_CYCLE_LONG_AGO) : 0;
     lastSignal = rawSignal;
 
+    // an event that has waited longer than the window has no partner
     stepAge = stepAge < window ? stepAge + 1 : POLY_CYCLE_LONG_AGO;
     edgeAge = edgeAge < window ? edgeAge + 1 : POLY_CYCLE_LONG_AGO;
 
@@ -295,7 +250,123 @@ struct PolyCycle {
     }
   }
 
-  inline void writeGates(const float trigVoltage, const int channels, const PolyCycleOpts opts) {
+  /**
+   * Option changes.
+   */
+  inline void applyChannelCount(const int channels) {
+    if (channels == lastChannels) {
+      return;
+    }
+    std::fill(outs + channels, outs + DANT::CHANS, 0.0f);
+    std::fill(gateOuts + channels, gateOuts + DANT::CHANS, 0.0f);
+    std::fill(gateRemaining + channels, gateRemaining + DANT::CHANS, 0);
+    std::fill(gapRemaining + channels, gapRemaining + DANT::CHANS, 0);
+    if (active >= channels) {
+      active = 0;
+    }
+    lastChannels = channels;
+  }
+
+  inline void applyIdleMode(const IDLE_MODE idleMode) {
+    if (idleMode == lastIdleMode) {
+      return;
+    }
+    if (idleMode == IDLE_ZERO) {
+      for (int c{0}; c < DANT::CHANS; ++c) {
+        if (c != active) {
+          outs[c] = 0.0f;
+        }
+      }
+    }
+    lastIdleMode = idleMode;
+  }
+
+  /**
+   * Channel changes.
+   */
+  // True when the signal has jumped by the threshold or more. Slow movement is absorbed by the reference instead.
+  inline bool detectChange(const float signal, const PolyCycleOpts& opts) {
+    if (!opts.advanceOnChange) {
+      reference = signal;
+      return false;
+    }
+    if (std::fabs(signal - reference) >= opts.changeThreshold - POLY_CYCLE_CHANGE_TOLERANCE) {
+      reference = signal;
+      return true;
+    }
+    reference += (signal - reference) * opts.followCoeff;
+    return false;
+  }
+
+  inline void advance(const Source source, const int channels, const IDLE_MODE idleMode) {
+    if (armed) {
+      armed = false;
+      undoChannel = -1;
+    } else {
+      leave(idleMode);
+      active = (active + 1) % channels;
+      undoChannel = active;
+      undoValue = outs[active];
+    }
+    samplesSinceAdvance = 0;
+    lastSource = source;
+    noteStarted = true;
+  }
+
+  inline void leave(const IDLE_MODE idleMode) {
+    if (idleMode == IDLE_ZERO) {
+      outs[active] = 0.0f;
+    }
+  }
+
+  // Returns to the first channel. A note that started just before the reset belongs to it, so that note is moved to
+  // the first channel and the channel it had briefly taken is put back as it was.
+  inline void resetChannels(const int channels, const bool recentAdvance, const PolyCycleOpts& opts) {
+    const float noteValue{outs[active]};
+    const int notePulse{gateRemaining[active]};
+
+    if (recentAdvance && undoChannel > 0 && undoChannel < channels) {
+      outs[undoChannel] = undoValue;
+      gateRemaining[undoChannel] = 0;
+    }
+    leave(opts.idleMode);
+    active = 0;
+    armed = !recentAdvance;
+    undoChannel = -1;
+
+    if (opts.resetClears) {
+      std::fill(outs, outs + DANT::CHANS, 0.0f);
+      std::fill(gateRemaining, gateRemaining + DANT::CHANS, 0);
+      std::fill(gapRemaining, gapRemaining + DANT::CHANS, 0);
+      muted = armed;
+    }
+
+    if (recentAdvance) {
+      gateRemaining[0] = notePulse;
+      if (opts.sampleAndHold) {
+        outs[0] = noteValue;
+      }
+    }
+  }
+
+  /**
+   * Outputs.
+   */
+  inline void writeSignal(const float signal, const PolyCycleOpts& opts) {
+    if (!opts.sampleAndHold) {
+      if (!muted) {
+        outs[active] = signal;
+      }
+      return;
+    }
+    // A trigger that arrived ahead of its signal has sampled the old value. Until the timing correction has that gap
+    // measured it cannot prevent this, so the sample is taken again when the step it was waiting for arrives.
+    if (noteStarted || (lateStep && !muted)) {
+      outs[active] = signal;
+    }
+  }
+
+  inline void writeGates(const float trigVoltage, const int channels, const PolyCycleOpts& opts) {
     if (opts.gateMode != lastGateMode) {
       std::fill(gateRemaining, gateRemaining + DANT::CHANS, 0);
       lastGateMode = opts.gateMode;
@@ -324,27 +395,6 @@ struct PolyCycle {
       } else {
         gateOuts[c] = 0.0f;
       }
-    }
-  }
-
-  inline void advance(const Source source, const int channels, const IDLE_MODE idleMode) {
-    if (armed) {
-      armed = false;
-      undoChannel = -1;
-    } else {
-      leave(idleMode);
-      active = (active + 1) % channels;
-      undoChannel = active;
-      undoValue = outs[active];
-    }
-    samplesSinceAdvance = 0;
-    lastSource = source;
-    noteStarted = true;
-  }
-
-  inline void leave(const IDLE_MODE idleMode) {
-    if (idleMode == IDLE_ZERO) {
-      outs[active] = 0.0f;
     }
   }
 };

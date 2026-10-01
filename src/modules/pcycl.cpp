@@ -16,6 +16,7 @@ const int HP{3};
 // VCV timing standard, events for the same note can be up to 1ms apart
 const float PCYCL_WINDOW_SECONDS{0.001f};
 const float PCYCL_ACTIVE_LIGHT{10.0f};
+const float PCYCL_DEFAULT_CHANNELS{4.0f};
 const float PCYCL_MIN_THRESHOLD{0.01f};
 const float PCYCL_MAX_THRESHOLD{2.0f};
 const float PCYCL_DEFAULT_THRESHOLD{1.0f / 12.0f};  // one semitone
@@ -57,27 +58,32 @@ struct PcyclModule : rack::engine::Module {
   };
   enum LightIds { RESET_LIGHT, NUM_LIGHTS };
 
-  DANT::PolyCycle cycle;
+  // what the trigger output sends, saved by index so only append to it
+  enum TrigOutMode { TRIG_OUT_PASS, TRIG_OUT_OFF, TRIG_OUT_TRIGGER, TRIG_OUT_GATE, NUM_TRIG_OUT_MODES };
+
+  // context menu settings, saved with the patch
   DANT::IDLE_MODE idleMode{DANT::IDLE_HOLD};
   bool sampleAndHold{false};
   bool resetClears{true};
   bool autoAlign{true};
   float manualDelay{0.0f};  // samples, a float so that the menu slider can write to it
-  bool advanceOnChange{false};
-  float changeThreshold{PCYCL_DEFAULT_THRESHOLD};
-  // what the trigger output sends, saved by index so only append to it
-  enum TrigOutMode { TRIG_OUT_PASS, TRIG_OUT_OFF, TRIG_OUT_TRIGGER, TRIG_OUT_GATE, NUM_TRIG_OUT_MODES };
   TrigOutMode trigOutMode{TRIG_OUT_PASS};
   float gateSeconds{PCYCL_DEFAULT_GATE_SECONDS};
+  bool advanceOnChange{false};
+  float changeThreshold{PCYCL_DEFAULT_THRESHOLD};
 
+  // signal routing and edge detection
+  DANT::PolyCycle cycle;
   rack::dsp::SchmittTrigger trigDetector;
   rack::dsp::SchmittTrigger resetDetector;
   rack::dsp::BooleanTrigger resetButtonDetector;
 
+  // time based values in samples, worked out again whenever the sample rate changes
   float knownSampleRate{0.0f};
   int windowSamples{48};
   float followCoeff{0.02f};
 
+  // read by the widgets
   int gridLightChannels{1};
   rack::simd::float_4 gridLightValues[DANT::SIMD];
 
@@ -87,7 +93,8 @@ struct PcyclModule : rack::engine::Module {
   PcyclModule() {
     rack::engine::Module::config(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS);
 
-    rack::engine::Module::configParam(CHANS_PARAM, 1.0f, static_cast<float>(DANT::CHANS), 4.0f, "Channels");
+    rack::engine::Module::configParam(CHANS_PARAM, 1.0f, static_cast<float>(DANT::CHANS), PCYCL_DEFAULT_CHANNELS,
+                                      "Channels");
     paramQuantities[CHANS_PARAM]->snapEnabled = true;
     // the channel count shapes the rest of the patch, randomising it is never what the user wants
     paramQuantities[CHANS_PARAM]->randomizeEnabled = false;
@@ -118,17 +125,18 @@ struct PcyclModule : rack::engine::Module {
     json_object_set_new(rootJ, "sampleAndHold", json_boolean(sampleAndHold));
     json_object_set_new(rootJ, "resetClears", json_boolean(resetClears));
     json_object_set_new(rootJ, "autoAlign", json_boolean(autoAlign));
-    json_object_set_new(rootJ, "signalDelay", json_integer(readManualDelay()));
-    json_object_set_new(rootJ, "advanceOnChange", json_boolean(advanceOnChange));
-    json_object_set_new(rootJ, "changeThreshold", json_real(static_cast<double>(changeThreshold)));
+    json_object_set_new(rootJ, "manualDelay", json_integer(readManualDelay()));
     json_object_set_new(rootJ, "trigOutMode", json_integer(static_cast<int>(trigOutMode)));
     json_object_set_new(rootJ, "gateSeconds", json_real(static_cast<double>(gateSeconds)));
+    json_object_set_new(rootJ, "advanceOnChange", json_boolean(advanceOnChange));
+    json_object_set_new(rootJ, "changeThreshold", json_real(static_cast<double>(changeThreshold)));
 
     return rootJ;
   }
 
   /**
    * Called when module is loaded, sets non-parameter module data.
+   * Values are checked, a patch file can be edited by hand.
    */
   void dataFromJson(json_t* rootJ) override {
     DANT::loadUserSettings();
@@ -145,16 +153,9 @@ struct PcyclModule : rack::engine::Module {
     if (json_t* j = json_object_get(rootJ, "autoAlign")) {
       autoAlign = json_boolean_value(j);
     }
-    if (json_t* j = json_object_get(rootJ, "signalDelay")) {
+    if (json_t* j = json_object_get(rootJ, "manualDelay")) {
       manualDelay = rack::math::clamp(static_cast<float>(json_integer_value(j)), 0.0f,
                                       static_cast<float>(DANT::POLY_CYCLE_MAX_DELAY));
-    }
-    if (json_t* j = json_object_get(rootJ, "advanceOnChange")) {
-      advanceOnChange = json_boolean_value(j);
-    }
-    if (json_t* j = json_object_get(rootJ, "changeThreshold")) {
-      changeThreshold =
-          rack::math::clamp(static_cast<float>(json_number_value(j)), PCYCL_MIN_THRESHOLD, PCYCL_MAX_THRESHOLD);
     }
     if (json_t* j = json_object_get(rootJ, "trigOutMode")) {
       const int mode{static_cast<int>(json_integer_value(j))};
@@ -164,6 +165,13 @@ struct PcyclModule : rack::engine::Module {
       gateSeconds =
           rack::math::clamp(static_cast<float>(json_number_value(j)), PCYCL_MIN_GATE_SECONDS, PCYCL_MAX_GATE_SECONDS);
     }
+    if (json_t* j = json_object_get(rootJ, "advanceOnChange")) {
+      advanceOnChange = json_boolean_value(j);
+    }
+    if (json_t* j = json_object_get(rootJ, "changeThreshold")) {
+      changeThreshold =
+          rack::math::clamp(static_cast<float>(json_number_value(j)), PCYCL_MIN_THRESHOLD, PCYCL_MAX_THRESHOLD);
+    }
   }
 
   /**
@@ -171,15 +179,16 @@ struct PcyclModule : rack::engine::Module {
    */
   void onReset() override {
     softReset();
+
     idleMode = DANT::IDLE_HOLD;
     sampleAndHold = false;
     resetClears = true;
     autoAlign = true;
     manualDelay = 0.0f;
-    advanceOnChange = false;
-    changeThreshold = PCYCL_DEFAULT_THRESHOLD;
     trigOutMode = TRIG_OUT_PASS;
     gateSeconds = PCYCL_DEFAULT_GATE_SECONDS;
+    advanceOnChange = false;
+    changeThreshold = PCYCL_DEFAULT_THRESHOLD;
 
     rack::engine::Module::onReset();
   }
@@ -205,6 +214,28 @@ struct PcyclModule : rack::engine::Module {
       updateSampleRate(args.sampleRate);
     }
 
+    const DANT::PolyCycleOpts processOptions = readOptions(args.sampleRate);
+    const float trigVoltage = inputs[TRIG_INPUT].getVoltage();
+    const bool triggered = trigDetector.process(trigVoltage, 0.1f, 2.0f);
+
+    cycle.step(inputs[SGNL_INPUT].getVoltage(), trigVoltage, triggered, readReset(), processOptions);
+
+    outputs[SGNL_OUTPUT].setChannels(processOptions.channels);
+    outputs[SGNL_OUTPUT].writeVoltages(cycle.outs);
+    outputs[TRIG_OUTPUT].setChannels(processOptions.channels);
+    outputs[TRIG_OUTPUT].writeVoltages(cycle.gateOuts);
+
+    updateLights(processOptions.channels, args.sampleTime);
+  }
+
+  inline void updateSampleRate(const float sampleRate) {
+    knownSampleRate = sampleRate;
+    windowSamples = std::max(1, static_cast<int>(sampleRate * PCYCL_WINDOW_SECONDS));
+    followCoeff = 1.0f - std::exp(-1.0f / (sampleRate * PCYCL_WINDOW_SECONDS));
+  }
+
+  // collects the knob and context menu settings into the form the DSP code takes
+  inline DANT::PolyCycleOpts readOptions(const float sampleRate) {
     DANT::PolyCycleOpts processOptions;
     processOptions.channels = readChannels();
     processOptions.idleMode = idleMode;
@@ -216,53 +247,41 @@ struct PcyclModule : rack::engine::Module {
     processOptions.changeThreshold = changeThreshold;
     processOptions.followCoeff = followCoeff;
     processOptions.windowSamples = windowSamples;
-    setGateOptions(processOptions, args.sampleRate);
-
-    const float trigVoltage = inputs[TRIG_INPUT].getVoltage();
-    const bool triggered = trigDetector.process(trigVoltage, 0.1f, 2.0f);
-
-    cycle.step(inputs[SGNL_INPUT].getVoltage(), trigVoltage, triggered, readReset(), processOptions);
-
-    outputs[SGNL_OUTPUT].setChannels(processOptions.channels);
-    outputs[SGNL_OUTPUT].writeVoltages(cycle.outs);
-    outputs[TRIG_OUTPUT].setChannels(processOptions.channels);
-    outputs[TRIG_OUTPUT].writeVoltages(cycle.gateOuts);
-
-    gridLightChannels = processOptions.channels;
-    resetArrays();
-    gridLightValues[DANT::SIMD_I[cycle.active]][DANT::SIMD_J[cycle.active]] = PCYCL_ACTIVE_LIGHT;
-
-    const bool resetHeld = params[RESET_PARAM].getValue() > 0.0f || resetDetector.isHigh();
-    lights[RESET_LIGHT].setSmoothBrightness(resetHeld ? 1.0f : 0.0f, args.sampleTime);
-  }
-
-  // the time based settings are kept in samples, so they only need working out when the sample rate changes
-  inline void updateSampleRate(const float sampleRate) {
-    knownSampleRate = sampleRate;
-    windowSamples = std::max(1, static_cast<int>(sampleRate * PCYCL_WINDOW_SECONDS));
-    followCoeff = 1.0f - std::exp(-1.0f / (sampleRate * PCYCL_WINDOW_SECONDS));
-  }
-
-  // a trigger and a gate are the same pulse to the DSP code, they only differ in length
-  inline void setGateOptions(DANT::PolyCycleOpts& processOptions, const float sampleRate) {
-    if (trigOutMode == TRIG_OUT_PASS) {
-      processOptions.gateMode = DANT::GATE_PASS;
-    } else if (trigOutMode == TRIG_OUT_OFF) {
-      processOptions.gateMode = DANT::GATE_OFF;
-    } else {
-      processOptions.gateMode = DANT::GATE_PULSE;
-      processOptions.gateSamples =
-          trigOutMode == TRIG_OUT_TRIGGER ? windowSamples : std::max(1, static_cast<int>(gateSeconds * sampleRate));
-    }
-  }
-
-  inline int readManualDelay() {
-    return rack::math::clamp(static_cast<int>(manualDelay + 0.5f), 0, DANT::POLY_CYCLE_MAX_DELAY);
+    processOptions.gateMode = readGateMode();
+    processOptions.gateSamples = readGateSamples(sampleRate);
+    return processOptions;
   }
 
   // the knob is snapped, rounding protects against values set by presets or parameter mapping
   inline int readChannels() {
     return rack::math::clamp(static_cast<int>(params[CHANS_PARAM].getValue() + 0.5f), 1, DANT::CHANS);
+  }
+
+  // the menu slider writes a float, the delay is a whole number of samples
+  inline int readManualDelay() {
+    return rack::math::clamp(static_cast<int>(manualDelay + 0.5f), 0, DANT::POLY_CYCLE_MAX_DELAY);
+  }
+
+  // a trigger and a gate are the same pulse to the DSP code, they only differ in length
+  inline DANT::GATE_MODE readGateMode() {
+    switch (trigOutMode) {
+      case TRIG_OUT_PASS:
+        return DANT::GATE_PASS;
+        break;
+      case TRIG_OUT_OFF:
+        return DANT::GATE_OFF;
+        break;
+      default:
+        return DANT::GATE_PULSE;
+        break;
+    }
+  }
+
+  inline int readGateSamples(const float sampleRate) {
+    if (trigOutMode == TRIG_OUT_TRIGGER) {
+      return windowSamples;
+    }
+    return std::max(1, static_cast<int>(gateSeconds * sampleRate));
   }
 
   // both sources are always processed so that neither detector misses its edge
@@ -271,6 +290,15 @@ struct PcyclModule : rack::engine::Module {
     const bool fromButton = resetButtonDetector.process(params[RESET_PARAM].getValue() > 0.0f);
     return fromInput || fromButton;
   }
+
+  inline void updateLights(const int channels, const float sampleTime) {
+    gridLightChannels = channels;
+    resetArrays();
+    gridLightValues[DANT::SIMD_I[cycle.active]][DANT::SIMD_J[cycle.active]] = PCYCL_ACTIVE_LIGHT;
+
+    const bool resetHeld = params[RESET_PARAM].getValue() > 0.0f || resetDetector.isHigh();
+    lights[RESET_LIGHT].setSmoothBrightness(resetHeld ? 1.0f : 0.0f, sampleTime);
+  }
 };
 
 /**
@@ -278,6 +306,8 @@ struct PcyclModule : rack::engine::Module {
  */
 static const std::string PCYCL_NEXT_CHANNEL{"\ue044"};
 static const std::string PCYCL_RESET{"\uf56c"};
+static const rack::math::Vec PCYCL_COUNT_SIZE{20.0f, 13.0f};
+static const float PCYCL_COUNT_CORNER{4.0f};
 
 // describes what the automatic timing correction last measured, for the context menu
 static std::string pcyclTimingLabel(const int skew) {
@@ -303,7 +333,7 @@ struct PcyclChannelCountWidget : rack::widget::TransparentWidget {
 
     nvgFillColor(args.vg, countBG);
     nvgBeginPath(args.vg);
-    nvgRoundedRect(args.vg, 0.0f, 0.0f, this->box.size.x, this->box.size.y, 4.0f);
+    nvgRoundedRect(args.vg, 0.0f, 0.0f, this->box.size.x, this->box.size.y, PCYCL_COUNT_CORNER);
     nvgFill(args.vg);
 
     nvgRestore(args.vg);
@@ -320,7 +350,7 @@ struct PcyclChannelCountWidget : rack::widget::TransparentWidget {
       opts.ypos = this->box.size.y * 0.5f;
 
       // the module browser has no module, show the default
-      const int channels{module ? module->gridLightChannels : 4};
+      const int channels{module ? module->gridLightChannels : static_cast<int>(PCYCL_DEFAULT_CHANNELS)};
       DANT::Fonts::drawText(args, rack::string::f("%d", channels), opts);
     }
     rack::widget::Widget::drawLayer(args, layer);
@@ -352,12 +382,12 @@ struct PcyclWidget : DANT::ModuleWidget {
     // sub-widgets
     {
       PcyclChannelCountWidget* countDisplay = new PcyclChannelCountWidget(module);
-      countDisplay->setSize(rack::math::Vec(20.0f, 13.0f));
-      countDisplay->setPosition(DANT::layout(2.0f, 9.0f).minus(countDisplay->getSize().mult(0.5f)));
+      countDisplay->setSize(PCYCL_COUNT_SIZE);
+      countDisplay->setPosition(DANT::layout(2.0f, 9.0f).minus(PCYCL_COUNT_SIZE.mult(0.5f)));
       addChild(countDisplay);
     }
 
-    // construct components
+    // construct components, the panel is a single column so they are listed from top to bottom
     signalInputPort = rack::createInputCentered<DANT::Port>(DANT::layout(2.0f, 2.95f), module, PcyclModule::SGNL_INPUT);
 
     trigInputPort = rack::createInputCentered<DANT::Port>(DANT::layout(2.0f, 4.9f), module, PcyclModule::TRIG_INPUT);
@@ -405,20 +435,21 @@ struct PcyclWidget : DANT::ModuleWidget {
     DANT::ModuleWidget::draw(args);  // call common draw method for panel first
 
     // now draw on top of the panel
-    DANT::Fonts::DrawOptions opts;
-    opts.ttfFile = DANT::REGULAR_TTF;
-    opts.align = NVG_ALIGN_LEFT | NVG_ALIGN_TOP;
-    opts.xpos = 1.5f;
-    opts.ypos = 12.5f;
-    DANT::Fonts::drawText(args, "PCycl", opts);
+    DANT::Fonts::DrawOptions nameOpts;
+    nameOpts.ttfFile = DANT::REGULAR_TTF;
+    nameOpts.align = NVG_ALIGN_LEFT | NVG_ALIGN_TOP;
+    nameOpts.xpos = 1.5f;
+    nameOpts.ypos = 12.5f;
+    DANT::Fonts::drawText(args, "PCycl", nameOpts);
 
-    opts = DANT::Fonts::DrawOptions();
+    // each icon sits above the port it describes, the trigger icon is repeated above its output
+    DANT::Fonts::DrawOptions opts;
     opts.align = NVG_ALIGN_MIDDLE | NVG_ALIGN_CENTER;
     opts.size = 20.0f;
     opts.xpos = DANT::layout(2.0f, 2.0f).x;
 
-    // each icon sits above the port it describes, the trigger icon is repeated above its output
     opts.ypos = DANT::layout(2.0f, 2.0f).y;
+    // input icon
     DANT::Fonts::drawSymbols(args, DANT::INPUT_CIRCLE, opts);
 
     opts.ypos = DANT::layout(2.0f, 4.0f).y;
@@ -428,6 +459,7 @@ struct PcyclWidget : DANT::ModuleWidget {
     DANT::Fonts::drawSymbols(args, PCYCL_RESET, opts);
 
     opts.ypos = DANT::layout(2.0f, 12.0f).y;
+    // output icon
     DANT::Fonts::drawSymbols(args, DANT::OUTPUT_CIRCLE, opts);
 
     opts.ypos = DANT::layout(2.0f, 14.05f).y;
@@ -439,11 +471,15 @@ struct PcyclWidget : DANT::ModuleWidget {
     PcyclModule* module = dynamic_cast<PcyclModule*>(this->module);
     if (!module) return;
     menu->addChild(new rack::ui::MenuSeparator);
+
+    // signal output
     menu->addChild(rack::createIndexSubmenuItem(
         "Idle channels", {"Hold last value", "Zero volts"}, [=]() { return static_cast<size_t>(module->idleMode); },
         [=](size_t mode) { module->idleMode = mode == 1 ? DANT::IDLE_ZERO : DANT::IDLE_HOLD; }));
     menu->addChild(rack::createBoolPtrMenuItem("Sample and hold", "", &module->sampleAndHold));
     menu->addChild(rack::createBoolPtrMenuItem("Reset clears outputs", "", &module->resetClears));
+
+    // the slider is only shown when it has an effect, the measurement only when there is one
     menu->addChild(rack::createSubmenuItem("Timing correction", "", [=](rack::ui::Menu* menu) {
       menu->addChild(rack::createBoolPtrMenuItem("Automatic", "", &module->autoAlign));
       if (module->autoAlign) {
@@ -455,6 +491,8 @@ struct PcyclWidget : DANT::ModuleWidget {
             DANT::RGB_SLIDER_WIDTH));
       }
     }));
+
+    // trigger output, the order of the labels must match PcyclModule::TrigOutMode
     menu->addChild(rack::createIndexSubmenuItem(
         "Trigger output", {"Pass trigger input", "Off", "Trigger for each note", "Gate for each note"},
         [=]() { return static_cast<size_t>(module->trigOutMode); },
@@ -463,6 +501,7 @@ struct PcyclWidget : DANT::ModuleWidget {
         new DANT::FloatValueQuantity("Gate length", PCYCL_MIN_GATE_SECONDS, PCYCL_MAX_GATE_SECONDS,
                                      PCYCL_DEFAULT_GATE_SECONDS, &module->gateSeconds, "s", 1.0f, "%.2f"),
         DANT::RGB_SLIDER_WIDTH));
+
     menu->addChild(rack::createSubmenuItem("Automatic channel increment", "", [=](rack::ui::Menu* menu) {
       menu->addChild(rack::createBoolPtrMenuItem("Enabled", "", &module->advanceOnChange));
       menu->addChild(

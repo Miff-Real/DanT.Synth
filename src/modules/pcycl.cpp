@@ -59,7 +59,8 @@ struct PcyclModule : rack::engine::Module {
 
   DANT::PolyCycle cycle;
   DANT::IDLE_MODE idleMode{DANT::IDLE_HOLD};
-  int signalDelay{0};
+  bool autoAlign{true};
+  float manualDelay{0.0f};  // samples, a float so that the menu slider can write to it
   bool advanceOnChange{false};
   float changeThreshold{PCYCL_DEFAULT_THRESHOLD};
   // what the trigger output sends, saved by index so only append to it
@@ -112,7 +113,8 @@ struct PcyclModule : rack::engine::Module {
 
     json_t* rootJ = json_object();
     json_object_set_new(rootJ, "idleMode", json_integer(static_cast<int>(idleMode)));
-    json_object_set_new(rootJ, "signalDelay", json_integer(signalDelay));
+    json_object_set_new(rootJ, "autoAlign", json_boolean(autoAlign));
+    json_object_set_new(rootJ, "signalDelay", json_integer(readManualDelay()));
     json_object_set_new(rootJ, "advanceOnChange", json_boolean(advanceOnChange));
     json_object_set_new(rootJ, "changeThreshold", json_real(static_cast<double>(changeThreshold)));
     json_object_set_new(rootJ, "trigOutMode", json_integer(static_cast<int>(trigOutMode)));
@@ -130,8 +132,12 @@ struct PcyclModule : rack::engine::Module {
     if (json_t* j = json_object_get(rootJ, "idleMode")) {
       idleMode = json_integer_value(j) == DANT::IDLE_ZERO ? DANT::IDLE_ZERO : DANT::IDLE_HOLD;
     }
+    if (json_t* j = json_object_get(rootJ, "autoAlign")) {
+      autoAlign = json_boolean_value(j);
+    }
     if (json_t* j = json_object_get(rootJ, "signalDelay")) {
-      signalDelay = rack::math::clamp(static_cast<int>(json_integer_value(j)), 0, DANT::POLY_CYCLE_MAX_DELAY);
+      manualDelay = rack::math::clamp(static_cast<float>(json_integer_value(j)), 0.0f,
+                                      static_cast<float>(DANT::POLY_CYCLE_MAX_DELAY));
     }
     if (json_t* j = json_object_get(rootJ, "advanceOnChange")) {
       advanceOnChange = json_boolean_value(j);
@@ -156,7 +162,8 @@ struct PcyclModule : rack::engine::Module {
   void onReset() override {
     softReset();
     idleMode = DANT::IDLE_HOLD;
-    signalDelay = 0;
+    autoAlign = true;
+    manualDelay = 0.0f;
     advanceOnChange = false;
     changeThreshold = PCYCL_DEFAULT_THRESHOLD;
     trigOutMode = TRIG_OUT_PASS;
@@ -189,7 +196,8 @@ struct PcyclModule : rack::engine::Module {
     DANT::PolyCycleOpts processOptions;
     processOptions.channels = readChannels();
     processOptions.idleMode = idleMode;
-    processOptions.delaySamples = signalDelay;
+    processOptions.autoAlign = autoAlign;
+    processOptions.delaySamples = readManualDelay();
     processOptions.advanceOnChange = advanceOnChange;
     processOptions.changeThreshold = changeThreshold;
     processOptions.followCoeff = followCoeff;
@@ -234,6 +242,10 @@ struct PcyclModule : rack::engine::Module {
     }
   }
 
+  inline int readManualDelay() {
+    return rack::math::clamp(static_cast<int>(manualDelay + 0.5f), 0, DANT::POLY_CYCLE_MAX_DELAY);
+  }
+
   // the knob is snapped, rounding protects against values set by presets or parameter mapping
   inline int readChannels() {
     return rack::math::clamp(static_cast<int>(params[CHANS_PARAM].getValue() + 0.5f), 1, DANT::CHANS);
@@ -252,6 +264,16 @@ struct PcyclModule : rack::engine::Module {
  */
 static const std::string PCYCL_NEXT_CHANNEL{"\ue044"};
 static const std::string PCYCL_RESET{"\uf56c"};
+
+// describes what the automatic timing correction last measured, for the context menu
+static std::string pcyclTimingLabel(const int skew) {
+  if (skew == 0) {
+    return "Measured: arriving together";
+  }
+  const int samples{skew < 0 ? -skew : skew};
+  return rack::string::f("Measured: %s %d sample%s early", skew < 0 ? "signal" : "trigger", samples,
+                         samples == 1 ? "" : "s");
+}
 
 struct PcyclChannelCountWidget : rack::widget::TransparentWidget {
   PcyclModule* module;
@@ -406,11 +428,17 @@ struct PcyclWidget : DANT::ModuleWidget {
     menu->addChild(rack::createIndexSubmenuItem(
         "Idle channels", {"Hold last value", "Zero volts"}, [=]() { return static_cast<size_t>(module->idleMode); },
         [=](size_t mode) { module->idleMode = mode == 1 ? DANT::IDLE_ZERO : DANT::IDLE_HOLD; }));
-    menu->addChild(rack::createIndexSubmenuItem(
-        "Signal delay",
-        {"None", "1 sample", "2 samples", "3 samples", "4 samples", "5 samples", "6 samples", "7 samples", "8 samples"},
-        [=]() { return static_cast<size_t>(module->signalDelay); },
-        [=](size_t samples) { module->signalDelay = static_cast<int>(samples); }));
+    menu->addChild(rack::createSubmenuItem("Timing correction", "", [=](rack::ui::Menu* menu) {
+      menu->addChild(rack::createBoolPtrMenuItem("Automatic", "", &module->autoAlign));
+      if (module->autoAlign) {
+        menu->addChild(rack::createMenuLabel(pcyclTimingLabel(module->cycle.skew)));
+      } else {
+        menu->addChild(new DANT::MenuSlider(
+            new DANT::FloatValueQuantity("Signal delay", 0.0f, static_cast<float>(DANT::POLY_CYCLE_MAX_DELAY), 0.0f,
+                                         &module->manualDelay, " samples", 1.0f, "%.0f"),
+            DANT::RGB_SLIDER_WIDTH));
+      }
+    }));
     menu->addChild(rack::createIndexSubmenuItem(
         "Trigger output", {"Pass trigger input", "Off", "Trigger for each note", "Gate for each note"},
         [=]() { return static_cast<size_t>(module->trigOutMode); },

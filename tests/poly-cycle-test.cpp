@@ -358,17 +358,39 @@ TEST_CASE("poly-cycle.hpp::PolyCycle") {
     CHECK(cycle.gateOuts[2] == GATE_LOW);
   }
 
-  SECTION("a channel reused before its pulse ends drops low for one sample") {
+  SECTION("a channel reused before its pulse ends drops low long enough to be retriggered") {
     DANT::PolyCycleOpts opts{make_opts(1)};
     opts.gateMode = DANT::GATE_PULSE;
-    opts.gateSamples = 10;
+    opts.gateSamples = 100;
     step(cycle, 1.0f, TRIG, NO_RESET, opts);
     CHECK(cycle.gateOuts[0] == GATE_HIGH);
     step(cycle, 1.0f, NO_TRIG, NO_RESET, opts);
     CHECK(cycle.gateOuts[0] == GATE_HIGH);
     step(cycle, 2.0f, TRIG, NO_RESET, opts);  // next note, same channel
     CHECK(cycle.gateOuts[0] == GATE_LOW);
+    for (int i{1}; i < opts.windowSamples; ++i) {
+      step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+      CHECK(cycle.gateOuts[0] == GATE_LOW);
+    }
     step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    settle(cycle, 2.0f, GATE_LOW, opts, 98);  // the pulse still runs its full length after the low period
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    step(cycle, 2.0f, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.gateOuts[0] == GATE_LOW);
+  }
+
+  SECTION("a passed gate that is still high when a note starts drops low long enough to be retriggered") {
+    const DANT::PolyCycleOpts opts{make_change_opts(1)};
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 1.0f, GATE_HIGH, opts);
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);  // legato note on the only channel
+    CHECK(cycle.gateOuts[0] == GATE_LOW);
+    settle(cycle, 2.0f, GATE_HIGH, opts, opts.windowSamples - 1);
+    CHECK(cycle.gateOuts[0] == GATE_LOW);
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
     CHECK(cycle.gateOuts[0] == GATE_HIGH);
   }
 
@@ -398,5 +420,143 @@ TEST_CASE("poly-cycle.hpp::PolyCycle") {
     opts.gateMode = DANT::GATE_PULSE;
     step(cycle, 1.0f, NO_TRIG, NO_RESET, opts);
     CHECK(cycle.gateOuts[0] == GATE_LOW);
+  }
+
+  SECTION("timing: nothing is delayed when the signal and trigger arrive together") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 0);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.gateOuts[0] == GATE_HIGH);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    cycle.step(2.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 0);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+    CHECK(cycle.gateOuts[1] == GATE_HIGH);
+  }
+
+  SECTION("timing: a trigger that arrives before its signal is measured, then held back to match") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+
+    // first note: trigger two samples ahead of the new value, this is the note the gap is measured on
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    cycle.step(0.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 2);
+    CHECK(cycle.active == 0);  // the trigger is not acted on a second time when the correction starts
+    settle(cycle, 1.0f, GATE_HIGH, opts, 20);
+    CHECK(cycle.active == 0);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+
+    // second note: the new channel must never output the old value, and its gate must rise with the new value
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 0);
+    CHECK(cycle.gateOuts[1] == GATE_LOW);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 0);
+    CHECK(cycle.gateOuts[1] == GATE_LOW);
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+    CHECK(cycle.gateOuts[1] == GATE_HIGH);
+    CHECK(cycle.skew == 2);
+  }
+
+  SECTION("timing: a signal that arrives before its trigger is measured, then held back to match") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+
+    // first note: new value three samples ahead of its trigger
+    cycle.step(1.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == -3);
+    CHECK(cycle.outs[0] == 1.0f);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+
+    // second note: the previous channel must never output the new value
+    cycle.step(2.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    cycle.step(2.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    cycle.step(2.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.outs[0] == 1.0f);
+    cycle.step(2.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    CHECK(cycle.active == 1);
+    CHECK(cycle.outs[0] == 1.0f);
+    CHECK(cycle.outs[1] == 2.0f);
+    CHECK(cycle.gateOuts[1] == GATE_HIGH);
+  }
+
+  SECTION("timing: a repeated note with no step keeps the last measurement") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 1);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);  // same value again
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    CHECK(cycle.skew == 1);
+    CHECK(cycle.active == 1);
+  }
+
+  SECTION("timing: a signal that is always moving is never measured") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    float ramp{0.0f};
+    for (int i{0}; i < 400; ++i) {
+      ramp += 0.01f;
+      const bool trig{i % 100 == 50};
+      cycle.step(ramp, trig ? GATE_HIGH : GATE_LOW, trig, NO_RESET, opts);
+    }
+    CHECK(cycle.skew == 0);
+    CHECK(cycle.active == 3);
+  }
+
+  SECTION("timing: events further apart than the window are not matched") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 0.0f, GATE_LOW, opts, opts.windowSamples + 5);
+    cycle.step(1.0f, GATE_LOW, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 0);
+  }
+
+  SECTION("timing: nothing is measured when the correction is turned off") {
+    const DANT::PolyCycleOpts opts{make_opts(4)};
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    cycle.step(0.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 0);
+  }
+
+  SECTION("timing: a change in the patch is picked up on the next note") {
+    DANT::PolyCycleOpts opts{make_opts(4)};
+    opts.autoAlign = true;
+    settle(cycle, 0.0f, GATE_LOW, opts, 10);
+    cycle.step(0.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    settle(cycle, 0.0f, GATE_HIGH, opts, 4);
+    cycle.step(1.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 5);
+    settle(cycle, 1.0f, GATE_LOW, opts);
+    const int before{cycle.active};
+    // the trigger now arrives only one sample ahead, it must still be acted on exactly once
+    cycle.step(1.0f, GATE_HIGH, TRIG, NO_RESET, opts);
+    cycle.step(2.0f, GATE_HIGH, NO_TRIG, NO_RESET, opts);
+    CHECK(cycle.skew == 1);
+    settle(cycle, 2.0f, GATE_LOW, opts);
+    CHECK(cycle.active == before + 1);
   }
 }

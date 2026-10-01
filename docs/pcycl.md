@@ -6,9 +6,12 @@
 signal to the next channel, and after the last channel it returns to the first. The trigger is passed through on a
 second polyphonic output, on the same channel as the signal.
 
-It is intended for sources that are not MIDI. VCV's MIDI to CV module gives each new note its own channel, so the
-release of one note can ring on while the next one starts. Patching a mono sequencer's pitch and gate through `PCycl`
-gives the same result.
+Spreading a mono signal across channels like this lets each value carry on after the next one has arrived. Some of
+the things it can be used for:
+
+* Playing a mono sequencer polyphonically, so that the release of one note rings on while the next one starts.
+* Sending successive hits of a pattern to different voices, or to different channels of a polyphonic effect.
+* Collecting a series of values, such as random voltages, into the channels of a single cable.
 
 ## Controls and Ports
 
@@ -22,7 +25,7 @@ Each icon on the panel sits above the port it describes.
 ### Trigger Input
 
 * **`Next channel trigger input`**: A rising edge here moves the signal to the next channel. This would normally be the
-  gate that belongs to the signal. The voltage at this input is also passed to the trigger output.
+  gate or trigger that belongs to the signal. The voltage at this input is also passed to the trigger output.
 
 ### Reset
 
@@ -53,7 +56,10 @@ When the module is bypassed both inputs are passed to their outputs unchanged, a
     which is still releasing stays in tune.
   * `Zero volts`: The channels fall to `0V`.
 
-* **Signal delay**: Delays the signal by `0` to `8` samples. See `Timing` below for when this is needed.
+* **Timing correction**: Lines up the signal and its trigger when they do not arrive together. See `Timing` below.
+  * `Automatic` (default on): The module measures how far apart the two arrive and delays the earlier one to match.
+    The menu shows the last measurement.
+  * `Signal delay`: Shown when `Automatic` is off. Delays the signal by a fixed `0` to `64` samples.
 
 * **Trigger output**: What the trigger output sends. A note starts each time the signal moves to the next channel,
   and on the first trigger after a reset.
@@ -61,8 +67,10 @@ When the module is bypassed both inputs are passed to their outputs unchanged, a
   * `Off`: The output stays at `0V`.
   * `Trigger for each note`: A `1ms`, `10V` trigger is sent on the new channel each time a note starts.
   * `Gate for each note`: A `10V` gate is sent on the new channel each time a note starts. Its length is set by
-    `Gate length`. Gates on different channels overlap. If a channel is used again before its gate has finished, the
-    gate drops to `0V` for one sample so that the voice is triggered again.
+    `Gate length`. Gates on different channels overlap.
+
+  If a note starts on a channel whose gate is still high, the gate first drops to `0V` for `1ms` so that the voice is
+  triggered again.
 
 * **Gate length**: The length of the gate sent by `Gate for each note`, from `0.01` to `2` seconds. The default is
   `0.1` seconds.
@@ -78,19 +86,40 @@ When the module is bypassed both inputs are passed to their outputs unchanged, a
 
 ## Timing
 
-In VCV Rack every cable delays its signal by one sample. `PCycl` changes channel on the sample that the trigger
-arrives, so what happens at a note change depends on whether the signal and its trigger arrive together.
+In VCV Rack every cable delays its signal by one sample. A signal and a trigger that leave their source on the same
+sample therefore arrive at `PCycl` together only if they pass through the same number of cables on the way. Each extra
+cable in one route makes that one arrive a sample later. For example, a clock patched straight to the trigger input,
+and also to a sequencer whose output goes through a quantizer to the signal input, puts two extra cables in the
+signal's route, so the trigger arrives two samples before the signal.
 
-* **Together**: The new value only ever appears on the new channel. This is the normal case when the signal and the
-  trigger come straight from the same module, each through one cable.
+`PCycl` changes channel on the sample that the trigger arrives, so the difference matters:
+
+* **Together**: The new value only ever appears on the new channel.
 
 * **Signal arrives first**: The new value reaches the previous channel before the trigger moves it on. With
-  `Hold last value` that channel then keeps the wrong value, so a releasing note would jump to the pitch of the next
-  one. This happens when the trigger takes a longer route than the signal, for example through another module. Set
-  `Signal delay` to the number of extra cables in the trigger's route to correct it.
+  `Hold last value` that channel then keeps the wrong value, so a note that is still releasing would jump to the pitch
+  of the next one.
 
-* **Trigger arrives first**: The previous channel is not affected. The new channel outputs the old value for the
-  samples in between, which is the same as would happen in the patch without `PCycl`.
+* **Trigger arrives first**: The new channel outputs the old value until the new one arrives.
+
+### Automatic correction
+
+With `Timing correction` set to `Automatic`, the module measures the difference each time a trigger and a step in the
+signal arrive within `1ms` of each other, and delays whichever arrives first by that many samples. Both outputs then
+change on the same sample, and neither of the cases above occurs.
+
+* The difference is set by the patch, so it is measured on one note and applied from the next. The first note after
+  the patch is changed is not corrected.
+* When the two already arrive together nothing is delayed.
+* The measurement needs a signal that steps from one steady value to another, as a sequencer or keyboard does. A
+  signal that is always moving, such as an LFO, cannot be measured and is not delayed.
+* Differences of up to `1ms` are corrected, limited to `64` samples.
+* The context menu shows the last measurement, for example `Measured: trigger 2 samples early`.
+
+### Manual correction
+
+With `Automatic` off, `Signal delay` delays the signal by a fixed number of samples. Set it to the number of extra
+cables in the trigger's route. It can only help when the signal arrives first.
 
 Enabling `Automatic channel increment` also protects the previous channel when a stepped signal arrives first, because
 the jump moves to the new channel before the trigger arrives.
@@ -104,4 +133,9 @@ To play a mono sequencer polyphonically:
 3. Patch the `[Poly] Signal output` to the `V/Oct` input of a polyphonic oscillator and the `[Poly] Trigger output` to
    the gate input of a polyphonic envelope.
 
-Each step of the sequence now plays on the next voice, and with a long release on the envelope the notes overlap.
+Each step of the sequence now plays on the next voice, and with a long release on the envelope the notes overlap. A
+voice is used again once the cycle comes back round to it, so if its previous note is still sounding it will be cut
+off by the new one. Use more channels or a shorter release to avoid this.
+
+VCV's MIDI to CV module can give each new note its own channel in the same way, once its polyphony channels are set
+above one. `PCycl` does this for sources that are not MIDI.

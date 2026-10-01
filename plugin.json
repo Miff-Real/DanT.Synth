@@ -35,6 +35,18 @@
       ],
       "keywords": "bend slide portamento glide",
       "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/bend.md"
+    },
+    {
+      "slug": "PCycl",
+      "name": "PCycl",
+      "description": "[3HP][Polyphonic] Poly Cycle. Routes a mono signal and its gate to the next polyphonic channel on each trigger.",
+      "tags": [
+        "Polyphonic",
+        "Switch",
+        "Utility"
+      ],
+      "keywords": "poly cycle rotate mono polyphony voice allocation sequencer gate",
+      "manualUrl": "https://github.com/Miff-Real/DanT.Synth/blob/main/docs/pcycl.md"
     }
   ]
 }

@@ -11,6 +11,8 @@ A VCV Rack plugin by DanT.
 ## Modules
 
 * [AOCR](docs/aocr.md) - `[5HP][Polyphonic]` Attenuverter & Offset & Clip & Rectify. Reorderable.
+* [Bend](docs/bend.md) - `[8HP][Polyphonic]` CV processor that produces programmable portamento, glides, envelopes, and pitch bends.
+* [PCycl](docs/pcycl.md) - `[3HP][Polyphonic]` Poly Cycle. Routes a mono signal and its gate to the next polyphonic channel on each trigger.
 
 ## Building the plugin
 

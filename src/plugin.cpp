@@ -7,6 +7,7 @@ void init(rack::plugin::Plugin* p) {
 
   p->addModel(modelAocr);
   p->addModel(modelBend);
+  p->addModel(modelPcycl);
 }
 
 float DANT::PANEL_R_B{DANT::DEFAULT_R_B};
